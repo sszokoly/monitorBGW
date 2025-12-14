@@ -1,30 +1,36 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 import re
-from typing import AsyncIterator, Iterable, Iterator, Optional, Tuple, Union, TypeVar, Any, Dict, List, Set
+from typing import (
+    Optional,
+    Any,
+    Dict,
+)
 from queue import Queue
 from datetime import datetime
 
-class BGW():
-    def __init__(self,
+
+class BGW:
+    def __init__(
+        self,
         bgw_ip: str,
-        proto: str = '',
-        polling_secs = 10,
-        bgw_name: str = '',
-        bgw_number: str = '',
-        show_announcements_files = '',
-        show_capture: str = '',
-        show_faults: str = '',
-        show_lldp_config: str = '',
-        show_mg_list: str = '',
-        show_port: str = '',
-        show_rtp_stat_summary: str = '',
-        show_running_config: str = '',
-        show_sla_monitor: str = '',
-        show_system: str = '',
-        show_temp: str = '',
-        show_utilization: str = '',
-        show_voip_dsp: str = '',
+        proto: str = "",
+        polling_secs=10,
+        bgw_name: str = "",
+        bgw_number: str = "",
+        show_announcements_files: str = "",
+        show_capture: str = "",
+        show_faults: str = "",
+        show_lldp_config: str = "",
+        show_mg_list: str = "",
+        show_port: str = "",
+        show_rtp_stat_summary: str = "",
+        show_running_config: str = "",
+        show_sla_monitor: str = "",
+        show_system: str = "",
+        show_temp: str = "",
+        show_utilization: str = "",
+        show_voip_dsp: str = "",
         **kwargs,
     ) -> None:
         self.bgw_ip = bgw_ip
@@ -35,8 +41,8 @@ class BGW():
         self.polls = 0
         self.avg_poll_secs = 0
         self.active_session_ids = set()
-        self.last_seen = None
-        self.last_session_id = None
+        self.last_seen: Optional[datetime] = None
+        self.last_session_id: Optional[str] = None
         self.show_announcements_files = show_announcements_files
         self.show_capture = show_capture
         self.show_faults = show_faults
@@ -109,7 +115,7 @@ class BGW():
         Returns the Active Session column from the RTP-Stat summary.
         """
         if self.show_rtp_stat_summary:
-            m = re.search(r'nal\s+\S+\s+(\S+)', self.show_rtp_stat_summary)
+            m = re.search(r"nal\s+\S+\s+(\S+)", self.show_rtp_stat_summary)
             return m.group(1) if m else "?/?"
         return "NA"
 
@@ -134,9 +140,7 @@ class BGW():
         """
         if self.show_capture:
             if self._capture_service is None:
-                m = re.search(
-                    r' service is (\w+) and (\w+)', self.show_capture
-                )
+                m = re.search(r" service is (\w+) and (\w+)", self.show_capture)
                 admin_state = m.group(1) if m else "?"
                 running_state = m.group(2) if m else "?"
                 if admin_state == "disabled":
@@ -153,17 +157,16 @@ class BGW():
         """
         if self.show_system:
             if self._chassis_hw is None:
-
                 vintage_search = re.search(
-                    r'Chassis HW Vintage\s+:\s+(\S+)', self.show_system
+                    r"Chassis HW Vintage\s+:\s+(\S+)", self.show_system
                 )
                 vintage = vintage_search.group(1) if vintage_search else "?"
-                
+
                 suffix_search = re.search(
                     r"Chassis HW Suffix\s+:\s+(\S+)", self.show_system
                 )
                 suffix = suffix_search.group(1) if suffix_search else "?"
-                
+
                 self._chassis_hw = f"{vintage}{suffix}"
             return self._chassis_hw
         return "NA"
@@ -175,7 +178,7 @@ class BGW():
         """
         if self.show_system:
             if self._comp_flash is None:
-                m = re.search(r'Flash Memory\s+:\s+(.*)', self.show_system)
+                m = re.search(r"Flash Memory\s+:\s+(.*)", self.show_system)
                 if m:
                     if "No" in m.group(1):
                         self._comp_flash = ""
@@ -192,7 +195,7 @@ class BGW():
         Returns the last 5s and 60s CPU utilization as a string in percentage.
         """
         if self.show_utilization:
-            m = re.search(r'10\s+(\d+)%\s+(\d+)%', self.show_utilization)
+            m = re.search(r"10\s+(\d+)%\s+(\d+)%", self.show_utilization)
             self._cpu_util = f"{m.group(1)}%/{m.group(2)}%" if m else "?/?"
             return self._cpu_util
         return "NA"
@@ -222,8 +225,8 @@ class BGW():
                     self._faults = 0
                 else:
                     m = re.findall(r"\s+\+ (\S+)", self.show_faults)
-                    self._faults = str(len(m))
-            return self._faults
+                    self._faults = len(m)
+            return str(self._faults)
         return "NA"
 
     @property
@@ -233,7 +236,7 @@ class BGW():
         """
         if self.show_system:
             if self._fw is None:
-                m = re.search(r'FW Vintage\s+:\s+(\S+)', self.show_system)
+                m = re.search(r"FW Vintage\s+:\s+(\S+)", self.show_system)
                 self._fw = m.group(1) if m else "?"
             return self._fw
         return "NA"
@@ -245,9 +248,9 @@ class BGW():
         """
         if self.show_system:
             if self._hw is None:
-                m = re.search(r'HW Vintage\s+:\s+(\S+)', self.show_system)
+                m = re.search(r"HW Vintage\s+:\s+(\S+)", self.show_system)
                 hw_vintage = m.group(1) if m else "?"
-                m = re.search(r'HW Suffix\s+:\s+(\S+)', self.show_system)
+                m = re.search(r"HW Suffix\s+:\s+(\S+)", self.show_system)
                 hw_suffix = m.group(1) if m else "?"
                 self._hw = f"{hw_vintage}{hw_suffix}"
             return self._hw
@@ -283,7 +286,7 @@ class BGW():
         """
         if self.show_system:
             if self._location is None:
-                m = re.search(r'System Location\s+:\s+(\S+)', self.show_system)
+                m = re.search(r"System Location\s+:\s+(\S+)", self.show_system)
                 self._location = m.group(1) if m else ""
             return self._location
         return "NA"
@@ -307,9 +310,8 @@ class BGW():
         """
         if self.show_system:
             if self._mainboard_hw is None:
-                
                 vintage = re.search(
-                    r'Mainboard HW Vintage\s+:\s+(\S+)', self.show_system
+                    r"Mainboard HW Vintage\s+:\s+(\S+)", self.show_system
                 )
                 vintage = vintage.group(1) if vintage else "?"
 
@@ -344,22 +346,29 @@ class BGW():
             and the corresponding values are a dictionary containing module
             details.
         """
+        if self._mm_groupdict:
+            return self._mm_groupdict
+
         if self.show_mg_list:
-            if self._mm_groupdict is None:
-                groupdict: Dict[str, Dict[str, str]] = {}
-                for l in (l.strip() for l in self.show_mg_list.splitlines()):
-                    if l.startswith("v") and "Not Installed" not in l:
-                        m = re.search(r"".join((
-                            r'.*?(?P<slot>\S+)',
-                            r'.*?(?P<type>\S+)',
-                            r'.*?(?P<code>\S+)',
-                            r'.*?(?P<suffix>\S+)',
-                            r'.*?(?P<hw_vint>\S+)',
-                            r'.*?(?P<fw_vint>\S+)',
-                        )), l)
-                        if m:
-                            groupdict.update({m.group("slot"): m.groupdict()})
-                self._mm_groupdict = groupdict
+            groupdict: Dict[str, Dict[str, str]] = {}
+            for text in (ln.strip() for ln in self.show_mg_list.splitlines()):
+                if text.startswith("v") and "Not Installed" not in text:
+                    m = re.search(
+                        r"".join(
+                            (
+                                r".*?(?P<slot>\S+)",
+                                r".*?(?P<type>\S+)",
+                                r".*?(?P<code>\S+)",
+                                r".*?(?P<suffix>\S+)",
+                                r".*?(?P<hw_vint>\S+)",
+                                r".*?(?P<fw_vint>\S+)",
+                            )
+                        ),
+                        text,
+                    )
+                    if m:
+                        groupdict.update({m.group("slot"): m.groupdict()})
+            self._mm_groupdict = groupdict
             return self._mm_groupdict
         return {}
 
@@ -449,7 +458,7 @@ class BGW():
     def mm_v7(self) -> str:
         """
         Returns the media module code and suffix for slot 7.
-        """        
+        """
         if self.show_mg_list:
             if self._mm_v7 is None:
                 self._mm_v7 = self._mm_v(7)
@@ -487,7 +496,7 @@ class BGW():
         """
         if self.show_system:
             if self._model is None:
-                m = re.search(r'Model\s+:\s+(\S+)', self.show_system)
+                m = re.search(r"Model\s+:\s+(\S+)", self.show_system)
                 self._model = m.group(1) if m else "?"
             return self._model
         return "NA"
@@ -599,8 +608,10 @@ class BGW():
         """
         if self.show_running_config:
             if self._port_redu is None:
-                m = re.search(r'port redundancy \d+/(\d+) \d+/(\d+)',
-                    self.show_running_config)
+                m = re.search(
+                    r"port redundancy \d+/(\d+) \d+/(\d+)",
+                    self.show_running_config,
+                )
                 self._port_redu = f"{m.group(1)}/{m.group(2)}" if m else ""
             return self._port_redu
         return "NA"
@@ -635,7 +646,7 @@ class BGW():
         Returns the current RAM utilization as percentage.
         """
         if self.show_utilization:
-            m = re.search(r'10\s+S+\s+\S+\s+(\d+)%', self.show_utilization)
+            m = re.search(r"10\s+S+\s+\S+\s+(\d+)%", self.show_utilization)
             self._ram_util = f"{m.group(1)}%" if m else ""
             return self._ram_util
         return "NA"
@@ -646,7 +657,7 @@ class BGW():
         Returns the RTP-Stat service status as a string.
         """
         if self._rtp_stat_service is None:
-            m = re.search(r'rtp-stat-service', self.show_running_config)
+            m = re.search(r"rtp-stat-service", self.show_running_config)
             self._rtp_stat_service = "enabled" if m else "disabled"
         return self._rtp_stat_service
 
@@ -657,7 +668,7 @@ class BGW():
         """
         if self.show_system:
             if self._serial is None:
-                m = re.search(r'Serial No\s+:\s+(\S+)', self.show_system)
+                m = re.search(r"Serial No\s+:\s+(\S+)", self.show_system)
                 self._serial = m.group(1) if m else "?"
             return self._serial
         return "NA"
@@ -669,7 +680,7 @@ class BGW():
         """
         if self.show_sla_monitor:
             if self._slamon_service is None:
-                m = re.search(r'SLA Monitor:\s+(\S+)', self.show_sla_monitor)
+                m = re.search(r"SLA Monitor:\s+(\S+)", self.show_sla_monitor)
                 self._slamon_service = m.group(1).lower() if m else "?"
             return self._slamon_service
         return "NA"
@@ -681,8 +692,10 @@ class BGW():
         """
         if self.show_sla_monitor:
             if self._sla_server is None:
-                m = re.search(r'Registered Server IP Address:\s+(\S+)',
-                              self.show_sla_monitor)
+                m = re.search(
+                    r"Registered Server IP Address:\s+(\S+)",
+                    self.show_sla_monitor,
+                )
                 self._sla_server = m.group(1) if m else ""
             return self._sla_server
         return "NA"
@@ -699,17 +712,22 @@ class BGW():
         if self.show_running_config:
             if self._snmp is None:
                 snmp = []
-                lines = [line.strip() for line in
-                    self.show_running_config.splitlines()]
-                
-                if any(line.startswith("snmp-server community")
-                       for line in lines):
+                lines = [
+                    line.strip()
+                    for line in self.show_running_config.splitlines()
+                ]
+
+                if any(
+                    line.startswith("snmp-server community") for line in lines
+                ):
                     snmp.append("2")
-                
-                if any(line.startswith("encrypted-snmp-server community")
-                       for line in lines):
+
+                if any(
+                    line.startswith("encrypted-snmp-server community")
+                    for line in lines
+                ):
                     snmp.append("3")
-                
+
                 self._snmp = "v" + "&".join(snmp) if snmp else ""
             return self._snmp
         return "NA"
@@ -722,7 +740,7 @@ class BGW():
         if self.show_running_config:
             if self._snmp_trap is None:
                 m = re.search(
-                    r'snmp-server bgw_ip (\S+) traps', self.show_running_config
+                    r"snmp-server bgw_ip (\S+) traps", self.show_running_config
                 )
                 self._snmp_trap = "enabled" if m else "disabled"
             return self._snmp_trap
@@ -736,7 +754,7 @@ class BGW():
         if self.show_temp:
             if self._temp is None:
                 m = re.search(
-                    r'Temperature\s+:\s+(\S+) \((\S+)\)', self.show_temp
+                    r"Temperature\s+:\s+(\S+) \((\S+)\)", self.show_temp
                 )
                 self._temp = f"{m.group(1)}/{m.group(2)}" if m else "?/?"
             return self._temp
@@ -748,8 +766,9 @@ class BGW():
         Returns the Total Session column from the RTP-Stat summary.
         """
         if self.show_rtp_stat_summary:
-            m = re.search(r'nal\s+\S+\s+\S+\s+(\S+)',
-                          self.show_rtp_stat_summary)
+            m = re.search(
+                r"nal\s+\S+\s+\S+\s+(\S+)", self.show_rtp_stat_summary
+            )
             return m.group(1) if m else "?/?"
         return "NA"
 
@@ -760,12 +779,15 @@ class BGW():
         """
         if self.show_system:
             if self._uptime is None:
-                m = re.search(r'Uptime \(\S+\)\s+:\s+(\S+)', self.show_system)
+                m = re.search(r"Uptime \(\S+\)\s+:\s+(\S+)", self.show_system)
                 if m:
-                    self._uptime = m.group(1)\
-                                    .replace(",", "d")\
-                                    .replace(":", "h", 1)\
-                                    .replace(":", "m") + "s"
+                    self._uptime = (
+                        m.group(1)
+                        .replace(",", "d")
+                        .replace(":", "h", 1)
+                        .replace(":", "m")
+                        + "s"
+                    )
                 else:
                     self._uptime = "?"
             return self._uptime
@@ -781,17 +803,18 @@ class BGW():
         for dsp in dsps:
             try:
                 inuse += int(dsp)
-            except:
+            except Exception:
                 pass
-        return f"{inuse}"
+        return str(inuse)
 
     @property
     def is_capturing(self) -> bool:
-        return (
-            "enabled/active" in self._capture_service
-            and
-            "capture stopped" not in self._capture_service
-        )
+        if self._capture_service:
+            return (
+                "enabled/active" in self._capture_service
+                and "capture stopped" not in self._capture_service
+            )
+        return False
 
     def update(
         self,
@@ -819,16 +842,18 @@ class BGW():
         self.bgw_name = bgw_name
         self.bgw_number = bgw_number
         self.last_session_id = last_session_id
-        
-        if last_seen:
-            last_seen = datetime.strptime(last_seen, "%Y-%m-%d,%H:%M:%S")
-            if not self.last_seen:
-                self.last_seen = last_seen
 
-            delta = last_seen - self.last_seen
+        if last_seen:
+            last_seen_dt = datetime.strptime(last_seen, "%Y-%m-%d,%H:%M:%S")
+            if not self.last_seen:
+                self.last_seen = last_seen_dt
+
+            delta = last_seen_dt - self.last_seen
             if delta:
                 delta_secs = delta.total_seconds()
-                self.avg_poll_secs = round((self.avg_poll_secs + delta_secs) / 2, 1)
+                self.avg_poll_secs = round(
+                    (self.avg_poll_secs + delta_secs) / 2, 1
+                )
             else:
                 self.avg_poll_secs = self.polling_secs
 
@@ -855,19 +880,30 @@ class BGW():
             A dictionary containing port details.
         """
         if self.show_port:
-            matches = re.findall(r'(.*Avaya Inc)', self.show_port)
-            if matches:
-                line = matches[idx] if idx < len(matches) else ""
-                if line:
-                    return re.search(r"".join((
-                        r'.*?(?P<port>\d+/\d+)',
-                        r'.*?(?P<name>.*)',
-                        r'.*?(?P<status>(connected|no link))',
-                        r'.*?(?P<vlan>\d+)',
-                        r'.*?(?P<level>\d+)',
-                        r'.*?(?P<neg>\S+)',
-                        r'.*?(?P<duplex>\S+)',
-                        r'.*?(?P<speed>\S+)')), line).groupdict()
+            matches = re.findall(r"(.*Avaya Inc)", self.show_port)
+
+            if not matches:
+                return {}
+
+            line = matches[idx] if idx < len(matches) else ""
+            if line:
+                m = re.search(
+                    r"".join(
+                        (
+                            r".*?(?P<port>\d+/\d+)",
+                            r".*?(?P<name>.*)",
+                            r".*?(?P<status>(connected|no link))",
+                            r".*?(?P<vlan>\d+)",
+                            r".*?(?P<level>\d+)",
+                            r".*?(?P<neg>\S+)",
+                            r".*?(?P<duplex>\S+)",
+                            r".*?(?P<speed>\S+)",
+                        )
+                    ),
+                    line,
+                )
+                if m:
+                    return m.groupdict()
         return {}
 
     def properties_asdict(self) -> Dict[str, Any]:
@@ -886,7 +922,7 @@ class BGW():
             if isinstance(obj, property):
                 val = obj.__get__(self, self.__class__)
                 properties[name] = val
-        return properties   
+        return properties
 
     def asdict(self) -> Dict[str, Any]:
         """
@@ -912,7 +948,7 @@ class BGW():
         Returns:
             An integer representing the number of megabytes.
         """
-        m = re.search(r'(\d+)([MG]B)', str)
+        m = re.search(r"(\d+)([MG]B)", str)
         if m:
             num, unit = int(m.group(1)), m.group(2)
             if unit == "MB":
@@ -931,5 +967,6 @@ class BGW():
 def main():
     pass
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

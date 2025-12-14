@@ -17,9 +17,9 @@ config = {
     "max_polling": 20,
     "timeout": 25,
     "polling_secs": 15,
-    "loglevel": "INFO",
+    "loglevel": "DEBUG",
     "logfile": "bgw.log",
-    "discovery_commands": [ 
+    "discovery_commands": [
         "show running-config",
         "show system",
         "show faults",
@@ -36,7 +36,7 @@ config = {
     "query_commands": [
         "show voip-dsp",
         "show capture",
-    ]
+    ],
 }
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ logger.setLevel(config["loglevel"])
 
 TASKS = set()
 
-COMPRESSED_EXPECT_SCRIPT = '''\
+COMPRESSED_EXPECT_SCRIPT = """\
 eJzVWntz27gR/1+fAqHpO79oS+nlZs6t214evbRpHhPnOpORFA1FQhIbEqQB0I9q9N27WAAk+JDl5G
 7SKcdjUcDuYvHbxWIX0N6js1Lws3nCzuhtQSM52CNv5zJMmCBRnmUhi0leyqKUZMHzjPx8Hd6F5CkP
 WbQiv4SS3oR3wPKeypIDyz8u374hN4lckaXuIwlb5CctUYKo9/cf3hEhQ5kImUQChLz++wfyzySiTF
@@ -93,29 +93,35 @@ ItbX9jMWjtBNXbEFJOdSCWp6lyiObPMHqU9+tfMzTvwFtZ97inmKvjRSc17ql8WkEeI1bc5Kr80w1n
 oQahN1dlIJ86YNUY0vu7ZA+yg37s8t3GcOU/vcaHUm3hkbzajOGSnYzlbTZt/3LZ5++/Sn0noMLsqW
 cgXwaSFT8mcy6lffbNlc7UkJi+ltxURG015qneSg61Z1mjjBP0+dNSlZZotwse4X1r0hPfCrAZoHfT
 3A1aWwXuJvtbX0vgmLkulfVmk1Bxibx+Y3DNMBxl+fR/8FdCza6g==
-'''
+"""
+
 
 def compress_and_wrap(input_string, column_width=78):
-    compressed_bytes = zlib.compress(input_string.encode('utf-8'))
+    compressed_bytes = zlib.compress(input_string.encode("utf-8"))
     base64_bytes = base64.b64encode(compressed_bytes)
-    wrapped = textwrap.fill(base64_bytes.decode('utf-8'), width=column_width)
+    wrapped = textwrap.fill(base64_bytes.decode("utf-8"), width=column_width)
     return wrapped
 
+
 def unwrap_and_decompress(wrapped_text):
-    base64_str = wrapped_text.replace('\n', '')
+    base64_str = wrapped_text.replace("\n", "")
     compressed_bytes = base64.b64decode(base64_str)
-    original_string = zlib.decompress(compressed_bytes).decode('utf-8')
+    original_string = zlib.decompress(compressed_bytes).decode("utf-8")
     return original_string
+
 
 EXPECT_SCRIPT = unwrap_and_decompress(COMPRESSED_EXPECT_SCRIPT)
 
-def create_bgw_script(bgw, script_template=EXPECT_SCRIPT) -> List[str]:
+
+def create_bgw_script(bgw, script_template=EXPECT_SCRIPT) -> str:
     debug = 1 if logger.getEffectiveLevel() == 10 else 0
+
     if not bgw.last_seen:
         rtp_stats = 0
         commands = config["discovery_commands"][:]
         prev_last_session_id = ""
         prev_active_session_ids = set()
+
     else:
         rtp_stats = 1
         prev_last_session_id = bgw.last_session_id
@@ -132,7 +138,9 @@ def create_bgw_script(bgw, script_template=EXPECT_SCRIPT) -> List[str]:
         "bgw_user": config["bgw_user"],
         "bgw_passwd": config["bgw_passwd"],
         "prev_last_session_id": f'"{prev_last_session_id}"',
-        "prev_active_session_ids": "{" + " ".join(f'"{c}"' for c in prev_active_session_ids) + "}",
+        "prev_active_session_ids": "{"
+        + " ".join(f'"{c}"' for c in prev_active_session_ids)
+        + "}",
         "rtp_stats": rtp_stats,
         "commands": "{" + " ".join(f'"{c}"' for c in commands) + "}",
         "debug": debug,
@@ -141,6 +149,7 @@ def create_bgw_script(bgw, script_template=EXPECT_SCRIPT) -> List[str]:
     logger.debug(f"Template variables {template_args} - {bgw.bgw_ip}")
     script = script_template.format(**template_args)
     return script
+
 
 def connected_bgws(ip_filter: Optional[Set[str]] = None) -> Dict[str, str]:
     """Return a dictionary of connected G4xx media-gateways
@@ -153,28 +162,29 @@ def connected_bgws(ip_filter: Optional[Set[str]] = None) -> Dict[str, str]:
     """
     result: Dict[str, str] = {}
     ip_filter = set(ip_filter) if ip_filter else set()
-    
+
     command = "netstat -tan | grep ESTABLISHED | grep -E ':(1039|2944|2945)'"
     pattern = r"([0-9.]+):(1039|2944|2945)\s+([0-9.]+):([0-9]+)"
     protocols = {"1039": "ptls", "2944": "tls", "2945": "unenc"}
-    
+
     connections = os.popen(command).read()
-    
+
     for m in re.finditer(pattern, connections):
         ip, port = m.group(3, 2)
-        
+
         proto = protocols.get(port, "unknown")
         logging.debug(f"Found BGW using {proto} - {ip}")
-        
+
         if not ip_filter or ip in ip_filter:
             result[ip] = proto
             logging.info(f"Added BGW to results - {ip}")
-    
+
     if not result:
         # For testing purposes, return a dummy dictionary
         return {"10.10.48.58": "ptls"}
-    
+
     return {ip: result[ip] for ip in sorted(result)}
+
 
 class CommandResult:
     """A consistent container for command output."""
@@ -191,7 +201,7 @@ class CommandResult:
         stderr: str,
         returncode: Optional[int],
         error_type: Optional[str] = None,
-        name: Optional[str] = None
+        name: Optional[str] = None,
     ) -> None:
         """
         Initializes the CommandResult object.
@@ -210,28 +220,27 @@ class CommandResult:
             f"name={repr(self.name)}",
             f"stdout={repr(self.stdout)}",
             f"stderr={repr(self.stderr)}",
-            f"returncode={self.returncode}"
+            f"returncode={self.returncode}",
         ]
         if self.error_type is not None:
             fields.append(f"error_type={repr(self.error_type)}")
 
         return f"CommandResult({', '.join(fields)})"
 
+
 async def _run_cmd(
-    program: str, 
-    args: List[str],
-    name: Optional[str] = None
-) -> Tuple[str, str, int]:
+    program: str, args: List[str], name: Optional[str] = None
+) -> Tuple[str, str, Optional[int]]:
     proc: Optional[asyncio.subprocess.Process] = None
-    
+
     try:
         proc = await asyncio.create_subprocess_exec(
             program,
             *args,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
-    
+
         logger.debug(f"Created PID {proc.pid} - {name}")
 
     except Exception as e:
@@ -241,11 +250,11 @@ async def _run_cmd(
 
     try:
         stdout_bytes, stderr_bytes = await proc.communicate()
-        
+
         return (
-            stdout_bytes.decode().strip(), 
-            stderr_bytes.decode().strip(), 
-            proc.returncode
+            stdout_bytes.decode().strip(),
+            stderr_bytes.decode().strip(),
+            proc.returncode,
         )
 
     except asyncio.CancelledError as e:
@@ -258,34 +267,34 @@ async def _run_cmd(
                 error_msg = f"Cleanup {e2.__class__.__name__} - {name}"
                 logger.error(error_msg)
         raise e
-        
+
     except Exception as e:
         raise
-    
+
     finally:
-        if proc:        
-            # WORKAROUND FOR PYTHON 3.6: 
-            if hasattr(proc, '_transport') and proc._transport:
+        if proc:
+            # WORKAROUND FOR PYTHON 3.6:
+            if hasattr(proc, "_transport") and proc._transport:  # type: ignore
                 try:
-                    proc._transport.close()
-                    proc._transport = None
+                    proc._transport.close()  # type: ignore
+                    proc._transport = None  # type: ignore
                 except Exception:
                     pass
 
+
 async def run_cmd(
-    program: str, 
-    args: List[str], 
+    program: str,
+    args: List[str],
     timeout: float = 10.0,
-    name: Optional[str] = None
-) -> Tuple[str, str, int]:
+    name: Optional[str] = None,
+) -> CommandResult:
     """
     Controller function that catches all exceptions and returns a structured result.
     """
     try:
         logger.info(f"Starting '{program}' - {name}")
         stdout, stderr, returncode = await asyncio.wait_for(
-            _run_cmd(program, args, name),
-            timeout=timeout
+            _run_cmd(program, args, name), timeout=timeout
         )
 
         logger.info(f"Completed '{program}' with rc {returncode} - {name}")
@@ -300,15 +309,17 @@ async def run_cmd(
 
     except Exception as e:
         e_name = e.__class__.__name__
+        error_msg = f"{e_name} - {name}"
         if e_name != "CancelledError":
-            error_msg = f"{e_name} - {name}"
             logger.error(f"{error_msg}")
         return CommandResult("", "", None, error_type=error_msg, name=name)
+
 
 def done_task_callback(task):
     name = task.name if hasattr(task, "name") else task._coro.__name__
     TASKS.discard(task)
-    logger.debug(f"Discarded task from TASKS - {name}")   
+    logger.debug(f"Discarded task from TASKS - {name}")
+
 
 def startup_async_loop():
     """Sets up the non-blocking event loop and child watcher."""
@@ -319,10 +330,11 @@ def startup_async_loop():
     watcher.attach_loop(loop)
     return loop
 
+
 def schedule_task(
     coro: Coroutine[Any, Any, Any],
     name: Optional[str] = None,
-    loop: asyncio.AbstractEventLoop = None,
+    loop: Optional[asyncio.AbstractEventLoop] = None,
 ) -> asyncio.Task:
     """Patched version of create_task that assigns a name to the task.
 
@@ -342,24 +354,28 @@ def schedule_task(
     """
     name = name if name else coro.__name__
     loop = loop if loop else asyncio.get_event_loop()
-    
+
     task = asyncio.ensure_future(coro, loop=loop)
-    task.name = name
-    logger.debug(f"Scheduled '{coro.__name__}' - {task.name}")
+    task.name = name  # type: ignore
+    logger.debug(f"Scheduled '{coro.__name__}' - {task.name}")  # type: ignore
 
     task.add_done_callback(done_task_callback)
     TASKS.add(task)
     logger.debug(f"Added task to TASKS - {name}")
-    
+
     return task
 
+
 async def _cancel_async_tasks(loop=None):
-    """Cancels all active tasks gracefully (runs inside the loop)."""
+    """
+    Cancels all active tasks gracefully (runs inside the loop).
+    """
     loop = loop if loop else asyncio.get_event_loop()
     current_task = asyncio.Task.current_task(loop)
 
     tasks_to_cancel = [
-        task for task in asyncio.Task.all_tasks(loop)
+        task
+        for task in asyncio.Task.all_tasks(loop)
         if not task.done() and task is not current_task
     ]
 
@@ -367,12 +383,12 @@ async def _cancel_async_tasks(loop=None):
         return
 
     for task in tasks_to_cancel:
-        name = task.name if hasattr(task, "name") else task._coro.__name__
         task.cancel()
 
     await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
     for _ in range(5):
         await asyncio.sleep(0.01)
+
 
 def shutdown_async_loop(loop=None):
     """Stops the event loop and cleans up all resources."""
@@ -383,14 +399,15 @@ def shutdown_async_loop(loop=None):
     except Exception as e:
         print(f"Async shutdown warning: {e}")
 
-    gc.collect() 
-    
+    gc.collect()
+
     watcher = asyncio.get_child_watcher()
-    if hasattr(watcher, 'detach_loop'):
+    if hasattr(watcher, "detach_loop"):
         watcher.detach_loop()
-        
+
     if not loop.is_closed():
         loop.close()
+
 
 def tick_async_loop(loop=None):
     """
@@ -403,10 +420,13 @@ def tick_async_loop(loop=None):
     ready_future.set_result(None)
     loop.run_until_complete(ready_future)
 
+
 def custom_exception_handler(loop, context):
-    exc = context.get('exception')
+    exc = context.get("exception")
     # Suppress the spurious TimeoutError reported at shutdown.
-    if isinstance(exc, asyncio.CancelledError) or isinstance(exc, asyncio.TimeoutError):
+    if isinstance(exc, asyncio.CancelledError) or isinstance(
+        exc, asyncio.TimeoutError
+    ):
         # Optionally, log that we suppressed it:
         # print("Suppressed spurious TimeoutError during shutdown.")
         logger.error(f"{repr(exc)} silenced")
@@ -414,10 +434,11 @@ def custom_exception_handler(loop, context):
     # For other exceptions, call the default handler.
     loop.default_exception_handler(context)
 
+
 def asyncio_run(
     main: Callable[..., Coroutine[Any, Any, Any]],
     *,
-    debug: Optional[bool] = None
+    debug: Optional[bool] = None,
 ) -> Any:
     """Execute the coroutine and return the result.
 
@@ -436,7 +457,8 @@ def asyncio_run(
     """
     if events._get_running_loop() is not None:
         raise RuntimeError(
-            "asyncio.run() cannot be called from a running event loop")
+            "asyncio.run() cannot be called from a running event loop"
+        )
 
     if not coroutines.iscoroutine(main):
         raise ValueError("a coroutine was expected, got {!r}".format(main))
@@ -458,6 +480,7 @@ def asyncio_run(
             events.set_event_loop(None)
             loop.close()
 
+
 def _cancel_all_tasks(loop):
     to_cancel = asyncio.Task.all_tasks()
     if not to_cancel:
@@ -472,26 +495,38 @@ def _cancel_all_tasks(loop):
         if task.cancelled():
             continue
         if task.exception() is not None:
-            loop.call_exception_handler({
-                'message': 'unhandled exception during asyncio.run() shutdown',
-                'exception': task.exception(),
-                'task': task,
-            })
+            loop.call_exception_handler(
+                {
+                    "message": "unhandled exception during asyncio.run() shutdown",
+                    "exception": task.exception(),
+                    "task": task,
+                }
+            )
+
 
 if __name__ == "__main__":
+
     async def main():
-        
+
         async def canceltask(task):
             await asyncio.sleep(1)
             task.cancel()
             await task
 
-        loop = asyncio.get_event_loop()
-        task1 = schedule_task(run_cmd('echo', ['help'], timeout=3, name="task1"))
-        task2 = schedule_task(run_cmd('/usr/bin/sleep', ['4'], timeout=3, name="task2"))
-        task3 = schedule_task(run_cmd('/usr/bin/sleep', ['2'], timeout=3, name="task3"))
+        asyncio.new_event_loop()
+        task1 = schedule_task(
+            run_cmd("echo", ["help"], timeout=3, name="task1")
+        )
+        task2 = schedule_task(
+            run_cmd("/usr/bin/sleep", ["4"], timeout=3, name="task2")
+        )
+        task3 = schedule_task(
+            run_cmd("/usr/bin/sleep", ["2"], timeout=3, name="task3")
+        )
         task4 = schedule_task(canceltask(task3))
-        results = await asyncio.gather(task1, task2, task3, task4, return_exceptions=True)
+        results = await asyncio.gather(
+            task1, task2, task3, task4, return_exceptions=True
+        )
         for result in results:
             print(repr(result))
 

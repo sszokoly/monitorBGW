@@ -2,8 +2,7 @@ import asyncio
 import time
 from utils import *
 from bgw import BGW
-from typing import Any, Callable, Coroutine, Optional, Tuple
-from concurrent import futures
+from typing import Optional
 from asyncio import Queue, Semaphore
 import json
 from storage import MemoryStorage
@@ -13,9 +12,11 @@ BGWs = {}
 STORAGE = MemoryStorage()
 TASKS = set()
 
+
 def callback(ok, err, total):
     print(f"Callback ok:{ok}/err:{err}/total:{total}")
-    print(BGWs['10.10.48.58'].fw)
+    print(BGWs["10.10.48.58"].fw)
+
 
 async def process_queue(queue, storage, callback=None) -> None:
     """
@@ -36,6 +37,7 @@ async def process_queue(queue, storage, callback=None) -> None:
         c += 1
         logger.info(f"Got item ({c}) from process queue")
         logger.debug(f"{item}")
+
 
 def process_item(item, storage=STORAGE, callback=None) -> None:
     """
@@ -59,16 +61,16 @@ def process_item(item, storage=STORAGE, callback=None) -> None:
             act_sess_ids = set()
             BGWs[bgw_ip].update(**data)
             logger.info(f"Updated BGW - {bgw_ip}")
-            
+
             rtp_sessions = data.get("rtp_sessions")
             for global_id, rtpstat in rtp_sessions.items():
                 rtpdetailed = parse_rtpstat(global_id, rtpstat)
-                
+
                 if rtpdetailed:
-                    storage[global_id] = rtpdetailed    
+                    storage[global_id] = rtpdetailed
                     session_id = f"{rtpdetailed.session_id:0>5}"
                     logger.info(f"Added {session_id} to storage - {bgw_ip}")
-                    
+
                     if rtpdetailed.is_active:
                         act_sess_ids.add(f"{session_id}")
 
@@ -77,6 +79,7 @@ def process_item(item, storage=STORAGE, callback=None) -> None:
 
             if callback:
                 callback()
+
 
 async def query(
     bgw: BGW,
@@ -116,20 +119,20 @@ async def query(
                 logger.debug(
                     f"Semaphore acquired ({semaphore._value} free) - {name}"
                 )
-                
+
                 diff = time.monotonic() - start
                 result = await run_cmd(
-                    program="expect", 
+                    program="expect",
                     args=["-c", create_bgw_script(bgw)],
-                    timeout=timeout, 
-                    name=name
+                    timeout=timeout,
+                    name=name,
                 )
 
                 if isinstance(result, CommandResult):
                     if not queue:
                         return result
                     await queue.put(result)
-                
+
                 sleep = round(max(polling_secs - diff, 0), 2)
                 avg_sleep = round((avg_sleep + sleep) / 2, 2)
                 logger.debug(f"Sleeping {sleep}s (avg {avg_sleep}s) in {name}")
@@ -148,21 +151,22 @@ async def query(
             logger.error(f"{repr(e)} in {name}")
             if not queue:
                 raise
-        
+
         finally:
             logger.debug(
                 f"Semaphore released ({semaphore._value} free) - {name}"
             )
+
 
 async def discovery(loop, callback=None):
     BGWs.clear()
     bgws = {ip: BGW(ip, proto) for ip, proto in connected_bgws().items()}
     tasks = schedule_queries(bgws=bgws, loop=loop)
     ok, err, total = 0, 0, len(tasks)
-    
+
     for fut in asyncio.as_completed(tasks):
         result = await fut
-        
+
         if isinstance(result, Exception):
             err += 1
 
@@ -172,9 +176,10 @@ async def discovery(loop, callback=None):
             logger.info(f"Updated BGWs - {bgw_ip}")
             process_item(result)
             ok += 1
-        
+
         if callback:
             callback(ok, err, total)
+
 
 def schedule_queries(loop, bgws=None, callback=None):
     queue = Queue(loop=loop) if bgws is None else None
@@ -183,10 +188,10 @@ def schedule_queries(loop, bgws=None, callback=None):
     timeout = config.get("timeout", 25)
     polling_secs = config.get("polling_secs", 15)
     storage = config.get("storage", STORAGE)
-    
+
     if queue:
         schedule_task(process_queue(queue, storage, callback), loop=loop)
-    
+
     tasks = []
     for bgw_ip, bgw in bgws.items():
         task = schedule_task(
@@ -196,33 +201,35 @@ def schedule_queries(loop, bgws=None, callback=None):
                 name=bgw_ip,
                 queue=queue,
                 timeout=timeout,
-                polling_secs=polling_secs
+                polling_secs=polling_secs,
             ),
             name=bgw_ip,
             loop=loop,
         )
         tasks.append(task)
-    
+
     return tasks
+
 
 def start_discovery(loop, discovery_done_callback=None):
     schedule_task(
-        discovery(
-            loop=loop,
-            callback=discovery_done_callback
-        ),
+        discovery(loop=loop, callback=discovery_done_callback),
         name="discovery",
-        loop=loop
+        loop=loop,
     )
+
 
 def stop_discovery(loop):
     shutdown_async_loop(loop)
 
+
 def start_queries(loop):
     schedule_queries(bgws=None, loop=loop)
 
+
 def stop_queries(loop):
     shutdown_async_loop(loop)
+
 
 def main():
     loop = startup_async_loop()
@@ -230,7 +237,7 @@ def main():
     start = time.time()
     discovery_done = False
     query_done = False
-    
+
     try:
         while True:
             if loop:
@@ -244,7 +251,7 @@ def main():
                 loop = None
             elif c > 25 and not query_done:
                 loop = startup_async_loop()
-                BGWs['10.10.48.58'].queue.put("capture start")
+                BGWs["10.10.48.58"].queue.put("capture start")
                 start_queries(loop)
                 query_done = True
             elif c > 300:
@@ -254,6 +261,7 @@ def main():
     finally:
         if loop is not None:
             shutdown_async_loop(loop)
+
 
 if __name__ == "__main__":
     main()

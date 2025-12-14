@@ -3,22 +3,29 @@
 from abc import ABC, abstractmethod
 from bisect import insort_left
 from collections import deque
-from collections.abc import MutableMapping
-from itertools import islice
-from typing import AsyncIterator, Iterable, Iterator, Optional, Tuple, Union, TypeVar, Any, Dict, List
+from collections.abc import MutableMapping, KeysView, ItemsView
+from typing import (
+    Iterator,
+    Optional,
+    Tuple,
+    Union,
+    Any,
+    Dict,
+    List,
+    ValuesView,
+)
 
 
 class AbstractRepository(ABC):
-
     # Defining an abstract method called add that takes one argument, 'sessions'
     @abstractmethod
     def put(self, sessions):
-        # This method will be implemented by the concrete repositories        
+        # This method will be implemented by the concrete repositories
         pass
 
-    # Defining an abstract method called get that takes one argument, 'ids's
+    # Defining an abstract method called get that takes one argument, 'key'
     @abstractmethod
-    def get(self, ids):
+    def get(self, key) -> Any:
         # This method will be implemented by the concrete repositories
         pass
 
@@ -28,13 +35,17 @@ class AbstractRepository(ABC):
         # This method will be implemented by the concrete repositories
         pass
 
+
 class SlicableOrderedDict(MutableMapping):
     """
     A mutable mapping that stores items in memory and supports a maximum
     length, discarding the oldest items if the maximum length is exceeded.
     Items are always stored ordered by keys. A key can also be integer or slice.
     """
-    def __init__(self, items: Optional[Dict] = None, maxlen: Optional[int] = None) -> None:
+
+    def __init__(
+        self, items: Optional[Dict] = None, maxlen: Optional[int] = None
+    ) -> None:
         """
         Initialize the MemoryStorage object.
 
@@ -49,10 +60,6 @@ class SlicableOrderedDict(MutableMapping):
         self._items = dict(items) if items else dict()
         self._keys = deque(sorted(self._items.keys()) if items else [])
         self.maxlen = maxlen
-
-    def __len__(self) -> int:
-        """Return the number of items stored in the MemoryStorage."""
-        return len(self._items)
 
     def __iter__(self) -> Iterator[Any]:
         """Return an iterator over the keys of the MemoryStorage."""
@@ -80,15 +87,19 @@ class SlicableOrderedDict(MutableMapping):
             If the key is an integer and out of bounds, or if the key does not exist.
         """
         if isinstance(key, slice):
-            return [self._items[self._keys[k]] for k in
-                    range(len(self._items)).__getitem__(key)]
+            return [
+                self._items[self._keys[k]]
+                for k in range(len(self._items)).__getitem__(key)
+            ]
         if isinstance(key, tuple):
-            return [self._items[self._keys[k]] for k in
-                    range(len(self._items)).__getitem__(slice(*key))]
+            return [
+                self._items[self._keys[k]]
+                for k in range(len(self._items)).__getitem__(slice(*key))
+            ]
         if isinstance(key, int):
             if self._items and len(self._items) > key:
                 return self._items[self._keys[key]]
-            else: 
+            else:
                 raise KeyError
         return self._items[key]
 
@@ -200,46 +211,46 @@ class SlicableOrderedDict(MutableMapping):
         if key in self._keys:
             return self._keys.index(key)
         raise ValueError
-    
-    def keys(self) -> Iterator[Any]:
+
+    def keys(self) -> KeysView[Any]:
         """
         Generate an iterator over the keys in the MemoryStorage.
 
         Returns
         -------
-        Generator[Any]
-            An iterator over the keys in the order they were inserted.
+        KeysView[Any]
+            A keys view over the keys in the order they were inserted.
         """
-        return (key for key in self._keys)
+        return self._items.keys()
 
-    def values(self) -> Iterator[Any]:
+    def values(self) -> ValuesView[Any]:
         """
         Generate an iterator over the values in the MemoryStorage.
 
         Returns
         -------
-        Generator[Any]
-            An iterator over the values in the order they were inserted.
+        ValuesView[Any]
+            A values view over the values in the order they were inserted.
         """
-        return (self._items[key] for key in self._keys)
+        return self._items.values()
 
-    def items(self) -> Iterator[Tuple]:
+    def items(self) -> ItemsView:
         """
         Generate an iterator over the (key, value) pairs in the MemoryStorage.
         The order of iteration is sorted by keys.
 
         Returns
         -------
-        Generator[Tuple]
-            An iterator over the (key, value) pairs in the MemoryStorage.
+        ItemsView
+            An items view over the (key, value) pairs in the MemoryStorage.
         """
-        return ((key, self._items[key]) for key in self._keys)
-    
+        return self._items.items()
+
     def clear(self) -> None:
         """
         Remove all items from the MemoryStorage.
 
-        This method clears the storage by removing all key-value pairs and 
+        This method clears the storage by removing all key-value pairs and
         resetting the internal key storage.
         """
         self._items.clear()
@@ -264,31 +275,40 @@ class SlicableOrderedDict(MutableMapping):
         """
         if not isinstance(other, self.__class__):
             return NotImplemented
-        return list(self.items()) == list(other.items()) and self.maxlen == other.maxlen
+        return (
+            list(self.items()) == list(other.items())
+            and self.maxlen == other.maxlen
+        )
 
     def __len__(self):
         return len(self._items)
 
-class MemoryStorage(SlicableOrderedDict, AbstractRepository):
 
+class MemoryStorage(SlicableOrderedDict, AbstractRepository):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
 
-    def put(self, itemdict: Dict[Any, Any]) -> None:
-        for k, v in itemdict.items():
+    def put(self, sessions: Dict[Any, Any]) -> None:
+        for k, v in sessions.items():
             self[k] = v
 
-    def get(self, key: Union[slice, Tuple[int, int], int, Any] = None) -> Union[Any, Iterator[Any]]:
+    def get(
+        self,
+        key: Union[slice, Tuple[int, int], int, Any] = None,
+        default: Any = None,
+    ) -> Union[Any, Iterator[Any]]:
         """
         Retrieve item(s) from the MemoryStorage.
 
-        If the key is a slice, tuple (for slicing), or is not provided, 
+        If the key is a slice, tuple (for slicing), or is not provided,
         returns a generator over the items. Otherwise, returns the single item.
 
         Parameters
         ----------
         key : slice | Tuple[int, int] | int | Any, optional
             The key(s) to retrieve. Defaults to retrieving all items.
+        default : Any, optional
+            The default value to return if the key does not exist.
 
         Returns
         -------
@@ -298,14 +318,18 @@ class MemoryStorage(SlicableOrderedDict, AbstractRepository):
         if key is None:
             key = slice(None, None)
 
-        return self[key]
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
     def clear(self) -> None:
         super().clear()
+
 
 if __name__ == "__main__":
     storage = MemoryStorage(maxlen=3)
     storage.update({"1": "item1", "4": "item4", "2": "item2"})
     storage.update({"3": "item3"})
     print(storage.get(-1))
-    
+    print(len(storage))
