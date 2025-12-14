@@ -20,10 +20,10 @@ set options [list -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null]
 set timeout 10
 set prompt "\)# "
 set last_session_id ""
+set rc 0
 array set commands_array {}
 array set rtp_sessions_array {}
 log_user 0
-set rc 0
 
 if {$debug} {
     set log_file "expect_debug_$bgw_ip.log"
@@ -48,13 +48,13 @@ proc json_escape {str} {
 }
 
 proc to_json {} {
-    global bgw_ip bgw_name bgw_number last_poll_time last_session_id \
+    global bgw_ip bgw_name bgw_number last_seen last_session_id \
            commands_array rtp_sessions_array
     set json "{"
     append json "\"bgw_ip\": \"[json_escape $bgw_ip]\", "
     append json "\"bgw_name\": \"[json_escape $bgw_name]\", "
     append json "\"bgw_number\": \"[json_escape $bgw_number]\", "
-    append json "\"last_poll_time\": \"[json_escape $last_poll_time]\", "
+    append json "\"last_seen\": \"[json_escape $last_seen]\", "
     append json "\"last_session_id\": \"[json_escape $last_session_id]\", "
     append json "\"commands\": {"
     set first 1
@@ -296,8 +296,8 @@ expect {
 set bgw_name ""; set bgw_number ""
 regexp {([^\s]+)-(\d+)[\(]} $expect_out(buffer) "" bgw_name bgw_number
 
-# Set last_poll_time
-set last_poll_time [exec date "+%Y-%m-%d,%H:%M:%S"]
+# Set last_seen
+set last_seen [exec date "+%Y-%m-%d,%H:%M:%S"]
 
 # Start capture if requested
 if {[lsearch -exact $commands "capture start"] != -1} {

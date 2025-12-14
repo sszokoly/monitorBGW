@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
+# MIT License
 """
-Converts an Expect script to a Python-ready string with proper escaping.
+Converts the bgw.exp script to a Python-ready string with proper escaping.
 Only escapes braces OUTSIDE the template variables section.
-Also compresses and encodes the script.
-Usage: python3 expect_to_python.py monitor.exp > output.txt
+Also creates a compressed and BASE64 encoded version.
+Usage: python3 escape_encode_expect.py bgw.exp
 """
 
 import base64
