@@ -13,7 +13,8 @@ from utils import logger
 ############################## BEGIN FUNCTIONS ###############################
 
 def get_available_terminal_types() -> List[str]:
-    """Get list of available terminal types from the system.
+    """
+    Get list of available terminal types from the system.
 
     Returns:
         List of strings of available terminal types.
@@ -64,23 +65,28 @@ def terminal_context(term_type="xterm-256color"):
 def init_colors():    
     curses.start_color()
     curses.use_default_colors()
+    
     for i in range(0, curses.COLORS):
         curses.init_pair(i + 1, i, -1)
+    
     curses.init_pair(255, 21, 247)
 
 def _show_curses_colors(stdscr):
     init_colors()
+    
     maxy, _ = stdscr.getmaxyx()
     attrs = (curses.A_NORMAL, curses.A_DIM, curses.A_BOLD, curses.A_STANDOUT)
     c = 0
     
     while c < len(attrs):
-        for columns, block in enumerate(range(0, curses.COLORS, maxy)):
         
+        for columns, block in enumerate(range(0, curses.COLORS, maxy)):
             for ypos in range(0, maxy):
-                xpos = columns*4
+                
+                xpos = columns * 4
                 color_pair = block + ypos
                 color = curses.color_pair(color_pair)
+                
                 try:
                     stdscr.addstr(ypos, xpos, str(color_pair), color|attrs[c])
                 except _curses.error:
