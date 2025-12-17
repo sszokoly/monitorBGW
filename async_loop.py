@@ -7,6 +7,7 @@ from asyncio import Queue, Semaphore
 import json
 from storage import MemoryStorage
 from rtpparser import parse_rtpstat
+from ahttp import start_http_server
 
 BGWs = {}
 STORAGE = MemoryStorage()
@@ -88,7 +89,7 @@ async def query(
     queue: Optional[asyncio.Queue] = None,
     timeout: float = 25,
     polling_secs: float = 30,
-) -> Optional[str]:
+) -> Optional[CommandResult]:
     """
     Asynchronously queries a BGW and returns the command output.
 
@@ -105,7 +106,7 @@ async def query(
         name (Optional[str], optional): The name of the task for logging.
 
     Returns:
-        Optional[str]: The output of the command if no queue is provided.
+        Optional[CommandResult]: The command result if no queue is provided.
     """
 
     name = name if name else bgw.bgw_ip
@@ -172,10 +173,13 @@ async def discovery(loop, callback=None):
 
         elif isinstance(result, CommandResult) and result.returncode == 0:
             bgw_ip = result.name
-            BGWs.update({bgw_ip: bgws[bgw_ip]})
-            logger.info(f"Updated BGWs - {bgw_ip}")
-            process_item(result)
-            ok += 1
+            if bgw_ip and bgw_ip in bgws:
+                BGWs.update({bgw_ip: bgws[bgw_ip]})
+                logger.info(f"Updated BGWs - {bgw_ip}")
+                process_item(result)
+                ok += 1
+            else:
+                err += 1
 
         if callback:
             callback(ok, err, total)
@@ -225,11 +229,20 @@ def stop_discovery(loop):
 
 def start_queries(loop):
     schedule_queries(bgws=None, loop=loop)
-
+    
+    http_server = config.get("http_server")  
+    if http_server:
+        schedule_task(
+            start_http_server(
+                host="0.0.0.0",
+                port=config.get("http_port", 8080),
+                upload_dir=config.get("upload_dir", "./")
+            ),
+            name="http_server", loop=loop
+        )
 
 def stop_queries(loop):
     shutdown_async_loop(loop)
-
 
 def main():
     loop = startup_async_loop()
@@ -250,11 +263,12 @@ def main():
                 stop_discovery(loop)
                 loop = None
             elif c > 25 and not query_done:
+                print("============= STARTING QUEUERIES =============")
                 loop = startup_async_loop()
                 BGWs["10.10.48.58"].queue.put("capture start")
                 start_queries(loop)
                 query_done = True
-            elif c > 300:
+            elif c > 120:
                 stop_queries(loop)
                 loop = None
                 break

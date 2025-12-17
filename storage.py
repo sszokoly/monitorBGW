@@ -1,20 +1,26 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
+
+############################## BEGIN IMPORTS #################################
+
 from abc import ABC, abstractmethod
 from bisect import insort_left
 from collections import deque
 from collections.abc import MutableMapping, KeysView, ItemsView
 from typing import (
     Iterator,
+    Iterable,
     Optional,
     Tuple,
     Union,
     Any,
     Dict,
     List,
-    ValuesView,
+    AbstractSet
 )
 
+############################## END IMPORTS ###################################
+############################## BEGIN CLASSES #################################
 
 class AbstractRepository(ABC):
     # Defining an abstract method called add that takes one argument, 'sessions'
@@ -212,7 +218,7 @@ class SlicableOrderedDict(MutableMapping):
             return self._keys.index(key)
         raise ValueError
 
-    def keys(self) -> KeysView[Any]:
+    def keys(self) -> AbstractSet[Any]:
         """
         Generate an iterator over the keys in the MemoryStorage.
 
@@ -223,7 +229,7 @@ class SlicableOrderedDict(MutableMapping):
         """
         return self._items.keys()
 
-    def values(self) -> ValuesView[Any]:
+    def values(self) -> Iterable[Any]:
         """
         Generate an iterator over the values in the MemoryStorage.
 
@@ -263,7 +269,7 @@ class SlicableOrderedDict(MutableMapping):
         The string includes the name of the class, the items currently stored,
         and the maximum length of the storage if applicable.
         """
-        return f"{type(self).__name__}=({self._items}, maxlen={self.maxlen})"
+        return f"{type(self).__name__}({self._items}, maxlen={self.maxlen})"
 
     def __eq__(self, other) -> bool:
         """
@@ -326,6 +332,7 @@ class MemoryStorage(SlicableOrderedDict, AbstractRepository):
     def clear(self) -> None:
         super().clear()
 
+############################## END CLASSES ###################################
 
 if __name__ == "__main__":
     storage = MemoryStorage(maxlen=3)
@@ -333,3 +340,5 @@ if __name__ == "__main__":
     storage.update({"3": "item3"})
     print(storage.get(-1))
     print(len(storage))
+    print(storage.values())
+    print(repr(storage))

@@ -1,8 +1,15 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
+
+############################## BEGIN IMPORTS #################################
+
 import re
 from datetime import datetime
+from typing import Optional
 from utils import logger
+
+############################## END IMPORTS ###################################
+############################## BEGIN VARIABLES ###############################
 
 RTP_DETAILED_PATTERNS = (
     r".*?Session-ID: (?P<session_id>\d+)",
@@ -77,6 +84,10 @@ RTP_DETAILED_PATTERNS = (
     r".*?Failures (?P<rsvp_failures>\d+)",
 )
 
+reRTPDetailed = re.compile(r"".join(RTP_DETAILED_PATTERNS), re.M | re.S | re.I)
+
+############################## BEGIN VARIABLES ###############################
+############################## BEGIN CLASSES #################################
 
 class RTPDetailed:
     def __init__(self, **params) -> None:
@@ -87,6 +98,7 @@ class RTPDetailed:
         """
         self.bgw_number: str = ""
         self.global_id: str = ""
+        self.session_id: str = ""
         self.qos: str = "ok"
         self.rx_rtp_packets: str = "0"
         self.status: str = ""
@@ -138,19 +150,19 @@ class RTPDetailed:
             return ""
 
     @property
-    def start_datetime(self) -> datetime | None:
+    def start_datetime(self) -> Optional[datetime]:
         if self.start_time:
             return datetime.strptime(self.start_time, "%Y-%m-%d,%H:%M:%S")
         return None
 
     @property
-    def end_datetime(self) -> datetime | None:
+    def end_datetime(self) -> Optional[datetime]:
         if not self.end_time or self.end_time == "-":
             return None
         return datetime.strptime(self.end_time, "%Y-%m-%d,%H:%M:%S")
 
     @property
-    def duration_secs(self) -> int | None:
+    def duration_secs(self) -> Optional[int]:
         if self.start_datetime is None:
             return None
 
@@ -165,7 +177,7 @@ class RTPDetailed:
 
         :return: A string representation of the RTPDetailed object.
         """
-        return f"RTPDetailed=({self.__dict__})"
+        return f"RTPDetailed({self.__dict__})"
 
     def __str__(self) -> str:
         """
@@ -182,9 +194,8 @@ class RTPDetailed:
     def asdict(self):
         return self.__dict__
 
-
-reRTPDetailed = re.compile(r"".join(RTP_DETAILED_PATTERNS), re.M | re.S | re.I)
-
+############################## END CLASSES ###################################
+############################## BEGIN FUNCTIONS ###############################
 
 def parse_rtpstat(global_id, rtpstat):
     """
@@ -210,6 +221,7 @@ def parse_rtpstat(global_id, rtpstat):
 
     return rtpdetailed
 
+############################## END FUNCTIONS #################################
 
 if __name__ == "__main__":
     d = {

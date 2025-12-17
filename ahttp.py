@@ -1,24 +1,25 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
+# -*- encoding: utf-8 -*-
+
 """
 Async HTTP server that receives file uploads via PUT/POST requests.
 Compatible with Python 3.6+
 
-Usage:
-    python3 upload_server.py [--host HOST] [--port PORT] [--dir DIRECTORY]
-
-Client upload examples:
-    curl -T gwcapture.pcap http://10.10.10.1:8080/gwcapture.pcap
-    curl -X PUT --data-binary @gwcapture.pcap http://10.10.10.1:8080/gwcapture.pcap
-    wget --method=PUT --body-file=gwcapture.pcap http://10.10.10.1:8080/gwcapture.pcap
+Examples:
+    curl -T mg.pcap http://10.10.10.1:8080/mg.pcap
+    curl -X PUT --data-binary @mg.pcap http://10.10.10.1:8080/mg.pcap
+    wget --method=PUT --body-file=gwcapture.pcap http://10.10.10.1:8080/mg.pcap
 """
 
-import asyncio
-import argparse
-import os
-import sys
-from urllib.parse import unquote
-from datetime import datetime
+############################## BEGIN IMPORTS #################################
 
+import asyncio
+import os
+from urllib.parse import unquote
+from utils import logger, config
+
+############################## END IMPORTS ###################################
+############################## BEGIN CLASSES #################################
 
 class FileUploadProtocol(asyncio.Protocol):
     def __init__(self, upload_dir):
@@ -35,10 +36,7 @@ class FileUploadProtocol(asyncio.Protocol):
     def connection_made(self, transport):
         self.transport = transport
         peername = transport.get_extra_info("peername")
-        print(
-            f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] '
-            f"Connection from {peername[0]}:{peername[1]}"
-        )
+        logger.info(f"Connection from {peername[0]}:{peername[1]}")
 
     def data_received(self, data):
         self.buffer += data
@@ -88,6 +86,10 @@ class FileUploadProtocol(asyncio.Protocol):
 
     def handle_upload(self):
         # Extract filename from path
+        if not self.path:
+            self.send_response(400, "Bad Request", "Filename missing")
+            return
+
         filename = os.path.basename(self.path.lstrip("/"))
 
         if not filename:
@@ -111,11 +113,8 @@ class FileUploadProtocol(asyncio.Protocol):
                 f.write(self.body[: self.content_length])
 
             file_size = len(self.body[: self.content_length])
-            print(
-                f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] '
-                f"Saved: {filename} ({file_size} bytes)"
-            )
-
+            logger.info(f"Received {filename} ({file_size} bytes) via HTTP")
+            
             self.send_response(
                 201,
                 "Created",
@@ -123,10 +122,7 @@ class FileUploadProtocol(asyncio.Protocol):
                 f"({file_size} bytes)",
             )
         except Exception as e:
-            print(
-                f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] '
-                f"Error saving {filename}: {e}"
-            )
+            logger.error(f"Error saving {filename}: {e}")
             self.send_response(
                 500, "Internal Server Error", f"Error saving file: {str(e)}"
             )
@@ -141,66 +137,48 @@ class FileUploadProtocol(asyncio.Protocol):
             f"\r\n"
         ).encode("utf-8") + response_body
 
-        self.transport.write(response)
-        self.transport.close()
+        if self.transport:
+            self.transport.write(response)
+            self.transport.close()
 
     def connection_lost(self, exc):
+        logger.info(f"Connection lost {exc}")
         pass
 
+############################## END CLASSES ###################################
+############################## BEGIN FUNCTIONS ###############################
 
-async def run_server(host, port, upload_dir):
+async def start_http_server(host, port, upload_dir):
     loop = asyncio.get_event_loop()
 
-    # Create upload directory if it doesn't exist
     os.makedirs(upload_dir, exist_ok=True)
-
     server = await loop.create_server(
         lambda: FileUploadProtocol(upload_dir), host, port
     )
 
-    print(f"File upload server running on http://{host}:{port}")
-    print(f"Upload directory: {os.path.abspath(upload_dir)}")
-    print(f"\nUpload files using:")
-    print(f"  curl -T file.pcap http://{host}:{port}/file.pcap")
-    print(
-        f"  curl -X PUT --data-binary @file.pcap http://{host}:{port}/file.pcap"
-    )
-    print(f"\nPress Ctrl+C to stop\n")
-
-    # Python 3.6 compatible - wait forever
-    await asyncio.Event().wait()
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Async HTTP file upload server"
-    )
-    parser.add_argument(
-        "--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)"
-    )
-    parser.add_argument(
-        "--port", type=int, default=8080, help="Port to bind to (default: 8080)"
-    )
-    parser.add_argument(
-        "--dir",
-        default="./uploads",
-        help="Upload directory (default: ./uploads)",
-    )
-
-    args = parser.parse_args()
+    logger.info(f"HTTP server started on http://{host}:{port}")
+    logger.info(f"Upload directory: {os.path.abspath(upload_dir)}")
 
     try:
-        asyncio.run(run_server(args.host, args.port, args.dir))
-    except AttributeError:
-        # Python 3.6 compatibility - asyncio.run() doesn't exist
-        loop = asyncio.get_event_loop()
-        try:
-            loop.run_until_complete(run_server(args.host, args.port, args.dir))
-        except KeyboardInterrupt:
-            print("\nServer stopped")
-        finally:
-            loop.close()
+        # wait forever
+        await asyncio.Event().wait()
 
+    except asyncio.CancelledError:
+        logger.info("HTTP server task cancelled")
+        raise
+
+    finally:
+        server.close()
+        await server.wait_closed()
+        logger.info("HTTP server closed")
+
+############################## END FUNCTIONS #################################
 
 if __name__ == "__main__":
-    main()
+    from utils import asyncio_run
+    
+    port = config.get("http_port", 8080)
+    host = "0.0.0.0"
+    upload_dir = config.get("upload_dir", "./")
+        
+    asyncio_run(start_http_server(host, port, upload_dir))

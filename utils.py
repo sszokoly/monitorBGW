@@ -1,3 +1,8 @@
+#!/usr/bin/env python
+# -*- encoding: utf-8 -*-
+
+############################## BEGIN IMPORTS #################################
+
 import asyncio
 import base64
 import gc
@@ -11,6 +16,9 @@ from asyncio import events
 from asyncio import tasks
 from typing import Any, Callable, Coroutine, Optional, Tuple, List, Set, Dict
 
+############################## BEGIN IMPORTS #################################
+############################## BEGIN VARIABLES ###############################
+
 config = {
     "bgw_user": "root",
     "bgw_passwd": "cmb@Dm1n",
@@ -19,6 +27,9 @@ config = {
     "polling_secs": 15,
     "loglevel": "DEBUG",
     "logfile": "bgw.log",
+    "http_server": "0.0.0.0",
+    "http_port": 8080,
+    "upload_dir": "uploads",
     "discovery_commands": [
         "show running-config",
         "show system",
@@ -41,11 +52,7 @@ config = {
 
 logger = logging.getLogger(__name__)
 FORMAT = "%(asctime)s - %(levelname)8s - %(message)s [%(funcName)s:%(lineno)s]"
-logging.basicConfig(format=FORMAT)
-logger.setLevel(config["loglevel"])
-
 TASKS = set()
-
 COMPRESSED_EXPECT_SCRIPT = """\
 eJzVWntz27gR/1+fAqHpO79oS+nlZs6t214evbRpHhPnOpORFA1FQhIbEqQB0I9q9N27WAAk+JDl5G
 7SKcdjUcDuYvHbxWIX0N6js1Lws3nCzuhtQSM52CNv5zJMmCBRnmUhi0leyqKUZMHzjPx8Hd6F5CkP
@@ -95,96 +102,19 @@ cgXwaSFT8mcy6lffbNlc7UkJi+ltxURG015qneSg61Z1mjjBP0+dNSlZZotwse4X1r0hPfCrAZoHfT
 3A1aWwXuJvtbX0vgmLkulfVmk1Bxibx+Y3DNMBxl+fR/8FdCza6g==
 """
 
-
-def compress_and_wrap(input_string, column_width=78):
-    compressed_bytes = zlib.compress(input_string.encode("utf-8"))
-    base64_bytes = base64.b64encode(compressed_bytes)
-    wrapped = textwrap.fill(base64_bytes.decode("utf-8"), width=column_width)
-    return wrapped
-
-
 def unwrap_and_decompress(wrapped_text):
     base64_str = wrapped_text.replace("\n", "")
     compressed_bytes = base64.b64decode(base64_str)
     original_string = zlib.decompress(compressed_bytes).decode("utf-8")
     return original_string
 
-
 EXPECT_SCRIPT = unwrap_and_decompress(COMPRESSED_EXPECT_SCRIPT)
 
+logging.basicConfig(format=FORMAT)
+logger.setLevel(config["loglevel"])
 
-def create_bgw_script(bgw, script_template=EXPECT_SCRIPT) -> str:
-    debug = 1 if logger.getEffectiveLevel() == 10 else 0
-
-    if not bgw.last_seen:
-        rtp_stats = 0
-        commands = config["discovery_commands"][:]
-        prev_last_session_id = ""
-        prev_active_session_ids = set()
-
-    else:
-        rtp_stats = 1
-        prev_last_session_id = bgw.last_session_id
-        prev_active_session_ids = sorted(bgw.active_session_ids)
-        commands = config["query_commands"][:]
-        if not bgw.queue.empty():
-            queued_commands = bgw.queue.get()
-            if isinstance(queued_commands, str):
-                queued_commands = [queued_commands]
-            commands.extend(queued_commands)
-
-    template_args = {
-        "bgw_ip": bgw.bgw_ip,
-        "bgw_user": config["bgw_user"],
-        "bgw_passwd": config["bgw_passwd"],
-        "prev_last_session_id": f'"{prev_last_session_id}"',
-        "prev_active_session_ids": "{"
-        + " ".join(f'"{c}"' for c in prev_active_session_ids)
-        + "}",
-        "rtp_stats": rtp_stats,
-        "commands": "{" + " ".join(f'"{c}"' for c in commands) + "}",
-        "debug": debug,
-    }
-
-    logger.debug(f"Template variables {template_args} - {bgw.bgw_ip}")
-    script = script_template.format(**template_args)
-    return script
-
-
-def connected_bgws(ip_filter: Optional[Set[str]] = None) -> Dict[str, str]:
-    """Return a dictionary of connected G4xx media-gateways
-
-    Args:
-        ip_filter (Optional[Set[str]], optional): IP addresses to filter.
-
-    Returns:
-        Dict[str, str]: A dictionary of connected gateways.
-    """
-    result: Dict[str, str] = {}
-    ip_filter = set(ip_filter) if ip_filter else set()
-
-    command = "netstat -tan | grep ESTABLISHED | grep -E ':(1039|2944|2945)'"
-    pattern = r"([0-9.]+):(1039|2944|2945)\s+([0-9.]+):([0-9]+)"
-    protocols = {"1039": "ptls", "2944": "tls", "2945": "unenc"}
-
-    connections = os.popen(command).read()
-
-    for m in re.finditer(pattern, connections):
-        ip, port = m.group(3, 2)
-
-        proto = protocols.get(port, "unknown")
-        logging.debug(f"Found BGW using {proto} - {ip}")
-
-        if not ip_filter or ip in ip_filter:
-            result[ip] = proto
-            logging.info(f"Added BGW to results - {ip}")
-
-    if not result:
-        # For testing purposes, return a dummy dictionary
-        return {"10.10.48.58": "ptls"}
-
-    return {ip: result[ip] for ip in sorted(result)}
-
+############################## END VARIABLES #################################
+############################## BEGIN CLASSES #################################
 
 class CommandResult:
     """A consistent container for command output."""
@@ -227,6 +157,79 @@ class CommandResult:
 
         return f"CommandResult({', '.join(fields)})"
 
+############################## END CLASSES ###################################
+############################## BEGIN FUNCTIONS ###############################
+
+def create_bgw_script(bgw, script_template=EXPECT_SCRIPT) -> str:
+    debug = 1 if logger.getEffectiveLevel() == 10 else 0
+
+    if not bgw.last_seen:
+        rtp_stats = 0
+        commands = config["discovery_commands"][:]
+        prev_last_session_id = ""
+        prev_active_session_ids = set()
+
+    else:
+        rtp_stats = 1
+        prev_last_session_id = bgw.last_session_id
+        prev_active_session_ids = sorted(bgw.active_session_ids)
+        commands = config["query_commands"][:]
+        if not bgw.queue.empty():
+            queued_commands = bgw.queue.get()
+            if isinstance(queued_commands, str):
+                queued_commands = [queued_commands]
+            commands.extend(queued_commands)
+
+    template_args = {
+        "bgw_ip": bgw.bgw_ip,
+        "bgw_user": config["bgw_user"],
+        "bgw_passwd": config["bgw_passwd"],
+        "prev_last_session_id": f'"{prev_last_session_id}"',
+        "prev_active_session_ids": "{"
+        + " ".join(f'"{c}"' for c in prev_active_session_ids)
+        + "}",
+        "rtp_stats": rtp_stats,
+        "commands": "{" + " ".join(f'"{c}"' for c in commands) + "}",
+        "debug": debug,
+    }
+
+    logger.debug(f"Template variables {template_args} - {bgw.bgw_ip}")
+    script = script_template.format(**template_args)
+    return script
+
+def connected_bgws(ip_filter: Optional[Set[str]] = None) -> Dict[str, str]:
+    """Return a dictionary of connected G4xx media-gateways
+
+    Args:
+        ip_filter (Optional[Set[str]], optional): IP addresses to filter.
+
+    Returns:
+        Dict[str, str]: A dictionary of connected gateways.
+    """
+    result: Dict[str, str] = {}
+    ip_filter = set(ip_filter) if ip_filter else set()
+
+    command = "netstat -tan | grep ESTABLISHED | grep -E ':(1039|2944|2945)'"
+    pattern = r"([0-9.]+):(1039|2944|2945)\s+([0-9.]+):([0-9]+)"
+    protocols = {"1039": "ptls", "2944": "tls", "2945": "unenc"}
+
+    connections = os.popen(command).read()
+
+    for m in re.finditer(pattern, connections):
+        ip, port = m.group(3, 2)
+
+        proto = protocols.get(port, "unknown")
+        logging.debug(f"Found BGW using {proto} - {ip}")
+
+        if not ip_filter or ip in ip_filter:
+            result[ip] = proto
+            logging.info(f"Added BGW to results - {ip}")
+
+    if not result:
+        # For testing purposes, return a dummy dictionary
+        return {"10.10.48.58": "ptls"}
+
+    return {ip: result[ip] for ip in sorted(result)}
 
 async def _run_cmd(
     program: str, args: List[str], name: Optional[str] = None
@@ -281,7 +284,6 @@ async def _run_cmd(
                 except Exception:
                     pass
 
-
 async def run_cmd(
     program: str,
     args: List[str],
@@ -314,12 +316,10 @@ async def run_cmd(
             logger.error(f"{error_msg}")
         return CommandResult("", "", None, error_type=error_msg, name=name)
 
-
 def done_task_callback(task):
     name = task.name if hasattr(task, "name") else task._coro.__name__
     TASKS.discard(task)
     logger.debug(f"Discarded task from TASKS - {name}")
-
 
 def startup_async_loop():
     """Sets up the non-blocking event loop and child watcher."""
@@ -329,7 +329,6 @@ def startup_async_loop():
     asyncio.set_child_watcher(watcher)
     watcher.attach_loop(loop)
     return loop
-
 
 def schedule_task(
     coro: Coroutine[Any, Any, Any],
@@ -365,7 +364,6 @@ def schedule_task(
 
     return task
 
-
 async def _cancel_async_tasks(loop=None):
     """
     Cancels all active tasks gracefully (runs inside the loop).
@@ -389,7 +387,6 @@ async def _cancel_async_tasks(loop=None):
     for _ in range(5):
         await asyncio.sleep(0.01)
 
-
 def shutdown_async_loop(loop=None):
     """Stops the event loop and cleans up all resources."""
     loop = loop if loop else asyncio.get_event_loop()
@@ -401,13 +398,8 @@ def shutdown_async_loop(loop=None):
 
     gc.collect()
 
-    watcher = asyncio.get_child_watcher()
-    if hasattr(watcher, "detach_loop"):
-        watcher.detach_loop()
-
     if not loop.is_closed():
         loop.close()
-
 
 def tick_async_loop(loop=None):
     """
@@ -420,6 +412,7 @@ def tick_async_loop(loop=None):
     ready_future.set_result(None)
     loop.run_until_complete(ready_future)
 
+############################## END FUNCTIONS #################################
 
 def custom_exception_handler(loop, context):
     exc = context.get("exception")
@@ -434,9 +427,8 @@ def custom_exception_handler(loop, context):
     # For other exceptions, call the default handler.
     loop.default_exception_handler(context)
 
-
 def asyncio_run(
-    main: Callable[..., Coroutine[Any, Any, Any]],
+    main: Coroutine[Any, Any, Any],
     *,
     debug: Optional[bool] = None,
 ) -> Any:
@@ -503,10 +495,8 @@ def _cancel_all_tasks(loop):
                 }
             )
 
-
 if __name__ == "__main__":
-
-    async def main():
+    async def test():
 
         async def canceltask(task):
             await asyncio.sleep(1)
@@ -530,4 +520,4 @@ if __name__ == "__main__":
         for result in results:
             print(repr(result))
 
-    asyncio_run(main(), debug=False)
+    asyncio_run(test(), debug=False)
