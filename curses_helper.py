@@ -3,7 +3,7 @@
 
 ############################## BEGIN IMPORTS #################################
 
-import _curses, curses, curses.ascii, curses.panel
+import _curses, curses
 import os
 from contextlib import contextmanager
 from typing import List
@@ -39,12 +39,12 @@ def change_terminal(to_type="xterm-256color"):
     old_term = os.environ.get("TERM", "")
     available_types = get_available_terminal_types()
     
-    if to_type in available_types:
-        os.environ["TERM"] = to_type
-        #logger.info(f"Changed terminal type to {to_type}")
-    else:
-        #logger.error(f"Terminal type {to_type} is not available")
-        pass
+    if to_type != old_term:
+        if to_type in available_types:
+            os.environ["TERM"] = to_type
+            logger.info(f"Changed terminal to '{to_type}'")
+        else:
+            logger.error(f"Terminal {to_type} is not available")
     
     return old_term
 
@@ -60,7 +60,9 @@ def terminal_context(term_type="xterm-256color"):
     try:
         yield
     finally:
-        os.environ["TERM"] = old_term
+        if term_type != old_term:
+            os.environ["TERM"] = old_term
+            logger.info(f"Changed terminal to '{old_term}'")
 
 def init_colors():    
     curses.start_color()
@@ -70,6 +72,8 @@ def init_colors():
         curses.init_pair(i + 1, i, -1)
     
     curses.init_pair(255, 21, 247)
+
+############################## END FUNCTIONS #################################
 
 def _show_curses_colors(stdscr):
     init_colors()
@@ -95,8 +99,6 @@ def _show_curses_colors(stdscr):
         stdscr.refresh()
         stdscr.getch()
         c += 1
-
-############################## END FUNCTIONS #################################
 
 if __name__ == "__main__":
     with terminal_context("xterm-256color"):
