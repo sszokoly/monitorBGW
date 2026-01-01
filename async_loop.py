@@ -1,3 +1,9 @@
+#!/usr/bin/env python
+# -*- encoding: utf-8 -*-
+
+############################## BEGIN IMPORTS ##################################
+
+############################## END IMPORTS ####################################
 import asyncio
 import time
 from utils import *
@@ -8,16 +14,17 @@ import json
 from storage import MemoryStorage
 from rtpparser import parse_rtpstat
 from ahttp import start_http_server
+from capture import Capture,  rtpinfos, capinfos
 
-BGWs = {}
-STORAGE = MemoryStorage()
-TASKS = set()
+############################## BEGIN VARIABLES ################################
 
+GWs = {}
+BGWs = MemoryStorage(name="BGWs")
+PCAPs = MemoryStorage(name="PCAPs")
+RTPs = MemoryStorage(maxlen=36, name="RTPs")
 
-def callback(ok, err, total):
-    print(f"Callback ok:{ok}/err:{err}/total:{total}")
-    print(BGWs["10.10.48.58"].fw)
-
+############################## END VARIABLES ##################################
+############################## BEGIN FUNCTIONS ################################
 
 async def process_queue(queue, storage, callback=None) -> None:
     """
@@ -39,8 +46,7 @@ async def process_queue(queue, storage, callback=None) -> None:
         logger.info(f"Got item ({c}) from process queue")
         logger.debug(f"{item}")
 
-
-def process_item(item, storage=STORAGE, callback=None) -> None:
+def process_item(item, bgw=None, storage=RTPs, callback=None) -> None:
     """
     Updates a BGW instance and RTP Storage with item from a JSON string.
 
@@ -57,30 +63,71 @@ def process_item(item, storage=STORAGE, callback=None) -> None:
     except json.JSONDecodeError:
         logger.error(f"JSONDecodeError: {item}")
     else:
+        bgw_number = data.get("bgw_number")
         bgw_ip = data.get("bgw_ip")
-        if bgw_ip in BGWs:
-            act_sess_ids = set()
-            BGWs[bgw_ip].update(**data)
-            logger.info(f"Updated BGW - {bgw_ip}")
 
-            rtp_sessions = data.get("rtp_sessions")
-            for global_id, rtpstat in rtp_sessions.items():
-                rtpdetailed = parse_rtpstat(global_id, rtpstat)
+        if not bgw_number and not bgw_ip:
+            return
+        
+        if bgw and bgw_number not in BGWs:
+            BGWs.put({bgw_number: bgw})
+            GWs.update({bgw_ip: bgw_number})
+            logger.info(f"Added BGW {bgw_number} to storage - {bgw_ip}")
 
-                if rtpdetailed:
-                    storage[global_id] = rtpdetailed
-                    session_id = f"{rtpdetailed.session_id:0>5}"
-                    logger.info(f"Added {session_id} to storage - {bgw_ip}")
+        act_sess_ids = set()
+        BGWs[bgw_number].update(**data)
+        logger.info(f"Updated BGW {bgw_number} with {data} - {bgw_ip}")
 
-                    if rtpdetailed.is_active:
-                        act_sess_ids.add(f"{session_id}")
+        rtp_sessions = data.get("rtp_sessions", {})
 
-            BGWs[bgw_ip].active_session_ids = act_sess_ids
+        for global_id, rtpstat in rtp_sessions.items():
+            rtpdetails = parse_rtpstat(global_id, rtpstat)
+
+            if rtpdetails:
+                storage[global_id] = rtpdetails
+                session_id = f"{rtpdetails.session_id:0>5}"
+                logger.info(f"Added {session_id} to storage - {bgw_ip}")
+
+                if rtpdetails.is_active:
+                    act_sess_ids.add(f"{session_id}")
+
+        BGWs[bgw_number].active_session_ids = act_sess_ids
+        if len(act_sess_ids) > 0:
             logger.info(f"Found {len(act_sess_ids)} active sessions - {bgw_ip}")
 
-            if callback:
-                callback()
+        if callback:
+            callback()
 
+async def process_upload_queue(queue, storage, callback=None) -> None:
+    c = 0
+    while True:
+        item = await queue.get()
+        c += 1
+        logger.info(f"Got item ({c}) from upload queue")
+        
+        upload_dir = config.get("upload_dir", "./")
+        pcapfile = os.path.join(upload_dir, item["filename"])
+        bgw_number = GWs.get(item["remote_ip"], "NA")
+        
+        if os.path.exists(pcapfile):
+            
+            capinfos_output = await capinfos(pcapfile)
+            rtpinfos_output = await rtpinfos(pcapfile)
+            item.update({
+                "capinfos": capinfos_output,
+                "rtpinfos": rtpinfos_output,
+                "bgw_number": bgw_number
+            })
+        
+        logger.debug(f"{item}")
+        process_upload_item(item, storage=storage, callback=callback)
+
+def process_upload_item(item, storage=PCAPs, callback=None):
+    capture = Capture(**item)
+    storage.put({capture.filename: capture})
+    logger.info(f"Put {capture.filename} into capture storage")
+    if callback:
+        callback()
 
 async def query(
     bgw: BGW,
@@ -90,38 +137,20 @@ async def query(
     timeout: float = 25,
     polling_secs: float = 30,
 ) -> Optional[CommandResult]:
-    """
-    Asynchronously queries a BGW and returns the command output.
-
-    If a queue is provided, the output is placed onto the queue and the
-    function does not return a value.
-    Otherwise, the output is returned directly.
-
-    Args:
-        bgw (BGW): The BGW instance to query.
-        timeout (float, optional): The timeout for the command execution.
-        queue (Optional[asyncio.Queue], optional): A queue to place the output.
-        polling_secs (float, optional): The interval between polling attempts.
-        semaphore (Optional[asyncio.Semaphore], optional): A semaphore.
-        name (Optional[str], optional): The name of the task for logging.
-
-    Returns:
-        Optional[CommandResult]: The command result if no queue is provided.
-    """
 
     name = name if name else bgw.bgw_ip
     semaphore = semaphore if semaphore else asyncio.Semaphore(1)
-    avg_sleep = polling_secs
+    avg_sleep = 0.0
+    sleep_n = 0
 
     while True:
         try:
-            start = time.monotonic()
+            t0 = time.monotonic()
             async with semaphore:
                 logger.debug(
                     f"Semaphore acquired ({semaphore._value} free) - {name}"
                 )
 
-                diff = time.monotonic() - start
                 result = await run_cmd(
                     program="expect",
                     args=["-c", create_bgw_script(bgw)],
@@ -134,9 +163,20 @@ async def query(
                         return result
                     await queue.put(result)
 
-                sleep = round(max(polling_secs - diff, 0), 2)
-                avg_sleep = round((avg_sleep + sleep) / 2, 2)
-                logger.debug(f"Sleeping {sleep}s (avg {avg_sleep}s) in {name}")
+            elapsed = time.monotonic() - t0
+            sleep = round(max(polling_secs - elapsed, 0.0), 2)
+            
+            sleep_n += 1
+            avg_sleep = (avg_sleep * (sleep_n - 1) + sleep) / sleep_n
+            avg_sleep = round(avg_sleep, 2)
+            
+            logger.debug(
+                f"Semaphore released ({semaphore._value} free), "
+                f"Cycle elapsed {elapsed:.2f}s, sleeping {sleep:.2f}s "
+                f"(avg_sleep {avg_sleep:.2f}s) - {name}"
+            )
+
+            if sleep:
                 await asyncio.sleep(sleep)
 
         except asyncio.CancelledError:
@@ -158,13 +198,19 @@ async def query(
                 f"Semaphore released ({semaphore._value} free) - {name}"
             )
 
+async def discovery(loop, callback=None, ip_filter=None):
+    bgws = {
+        ip: BGW(ip, proto) for ip, proto in connected_gws(ip_filter).items()
+    }
+    if not bgws:
+        return
 
-async def discovery(loop, callback=None):
-    BGWs.clear()
-    bgws = {ip: BGW(ip, proto) for ip, proto in connected_bgws().items()}
-    tasks = schedule_queries(bgws=bgws, loop=loop)
+    tasks = schedule_queries(loop, bgws)
     ok, err, total = 0, 0, len(tasks)
-
+    
+    if callback:
+        callback((ok, err, total))
+    
     for fut in asyncio.as_completed(tasks):
         result = await fut
 
@@ -172,26 +218,25 @@ async def discovery(loop, callback=None):
             err += 1
 
         elif isinstance(result, CommandResult) and result.returncode == 0:
-            bgw_ip = result.name
-            if bgw_ip and bgw_ip in bgws:
-                BGWs.update({bgw_ip: bgws[bgw_ip]})
-                logger.info(f"Updated BGWs - {bgw_ip}")
-                process_item(result)
-                ok += 1
+            if result.name is not None:    
+                bgw_ip = result.name
+                if bgw_ip in bgws:
+                    bgw = bgws[bgw_ip]
+                    process_item(result, bgw)
+                    ok += 1
             else:
                 err += 1
 
         if callback:
-            callback(ok, err, total)
-
+            callback((ok, err, total))
 
 def schedule_queries(loop, bgws=None, callback=None):
-    queue = Queue(loop=loop) if bgws is None else None
+    queue = Queue(loop=loop) if GWs else None
     bgws = bgws if bgws else BGWs
     semaphore = Semaphore(config.get("max_polling", 20))
     timeout = config.get("timeout", 25)
     polling_secs = config.get("polling_secs", 15)
-    storage = config.get("storage", STORAGE)
+    storage = config.get("storage", RTPs)
 
     if queue:
         schedule_task(process_queue(queue, storage, callback), loop=loop)
@@ -214,6 +259,28 @@ def schedule_queries(loop, bgws=None, callback=None):
 
     return tasks
 
+def schedule_http_server(loop):
+    http_server = config.get("http_server")  
+    
+    if not http_server:
+        return
+
+    upload_queue = Queue(loop=loop)
+    
+    schedule_task(
+        start_http_server(
+            host=http_server,
+            port=config.get("http_port", 8080),
+            upload_dir=config.get("upload_dir", "./"),
+            upload_queue=upload_queue
+        ),
+        name="http_server", loop=loop
+    )
+
+    schedule_task(
+        process_upload_queue(upload_queue, storage=PCAPs),
+        name="process_upload_queue", loop=loop
+    )
 
 def start_discovery(loop, discovery_done_callback=None):
     schedule_task(
@@ -222,36 +289,87 @@ def start_discovery(loop, discovery_done_callback=None):
         loop=loop,
     )
 
-
-def stop_discovery(loop):
-    shutdown_async_loop(loop)
-
-
-def start_queries(loop):
-    schedule_queries(bgws=None, loop=loop)
+def startup_async_loop():
+    """Sets up the non-blocking event loop and child watcher."""
+    loop = asyncio.new_event_loop()
     
-    http_server = config.get("http_server")  
-    if http_server:
-        schedule_task(
-            start_http_server(
-                host="0.0.0.0",
-                port=config.get("http_port", 8080),
-                upload_dir=config.get("upload_dir", "./")
-            ),
-            name="http_server", loop=loop
-        )
+    # Create and attach NEW watcher BEFORE setting the loop
+    watcher = asyncio.SafeChildWatcher()
+    watcher.attach_loop(loop)
+    asyncio.set_child_watcher(watcher)
 
-def stop_queries(loop):
-    shutdown_async_loop(loop)
+    # Now set the event loop
+    asyncio.set_event_loop(loop)
+    logger.debug("Loop started")
 
-def main():
-    loop = startup_async_loop()
-    start_discovery(loop)
-    start = time.time()
-    discovery_done = False
-    query_done = False
+    return loop
 
+def tick_async_loop(loop):
+    """Run one iteration of the asyncio loop."""
+    if loop is None or loop.is_closed():
+        return
+
+    # Run ready callbacks/I/O once, then stop.
+    loop.call_soon(loop.stop)
+    loop.run_forever()
+
+def request_shutdown(loop):
+    """Schedule shutdown on the loop; do not block."""
+    if loop is None or loop.is_closed():
+        return
+
+    logger.debug("Async loop shutdown requested")
+    # Create a task inside the loop
+    loop.create_task(_shutdown_async(loop))
+
+    # Ensure the loop runs at least one more tick
+    loop.call_soon(loop.stop)
+
+async def _shutdown_async(loop):
+    await _cancel_all_tasks(loop)
     try:
+        await loop.shutdown_asyncgens()
+    except Exception:
+        pass
+
+async def _cancel_all_tasks(loop):
+    logger.debug("Cancelling all tasks except current task")
+    current = asyncio.Task.current_task(loop=loop)
+    tasks = [
+        t for t in asyncio.Task.all_tasks(loop=loop)
+        if t is not current and not t.done()
+    ]
+
+    for t in tasks:
+        t.cancel()
+
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+def finalize_loop_if_idle(loop):
+    """Close loop once all tasks are done/cancelled."""
+    if loop is None or loop.is_closed():
+        return True
+
+    logger.debug("Closing async loop")
+    
+    pending = [t for t in asyncio.Task.all_tasks(loop) if not t.done()]
+    if pending:
+        return False
+
+    loop.close()
+    return True
+
+############################## BEGIN FUNCTIONS ################################
+
+if __name__ == "__main__":
+    def main():
+        loop = startup_async_loop()
+        start_discovery(loop)
+        start = time.time()
+        discovery_done = False
+        query_done = False
+
         while True:
             if loop:
                 tick_async_loop(loop)
@@ -260,22 +378,16 @@ def main():
             c = end - start
             if c > 20 and not discovery_done:
                 discovery_done = True
-                stop_discovery(loop)
+                request_shutdown(loop)
                 loop = None
             elif c > 25 and not query_done:
                 print("============= STARTING QUEUERIES =============")
                 loop = startup_async_loop()
-                BGWs["10.10.48.58"].queue.put("capture start")
-                start_queries(loop)
+                BGWs["001"].queue.put("capture start")
+                schedule_queries(loop)
                 query_done = True
             elif c > 120:
-                stop_queries(loop)
+                request_shutdown(loop)
                 loop = None
                 break
-    finally:
-        if loop is not None:
-            shutdown_async_loop(loop)
-
-
-if __name__ == "__main__":
     main()

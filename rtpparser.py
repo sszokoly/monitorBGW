@@ -6,12 +6,13 @@
 import re
 from datetime import datetime
 from typing import Optional
-from utils import logger
 
 ############################## END IMPORTS ###################################
+from utils import logger
+
 ############################## BEGIN VARIABLES ###############################
 
-RTP_DETAILED_PATTERNS = (
+RTP_DETAILS = (
     r".*?Session-ID: (?P<session_id>\d+)",
     r".*?Status: (?P<status>\S+),",
     r".*?QOS: (?P<qos>\S+),",
@@ -84,12 +85,12 @@ RTP_DETAILED_PATTERNS = (
     r".*?Failures (?P<rsvp_failures>\d+)",
 )
 
-reRTPDetailed = re.compile(r"".join(RTP_DETAILED_PATTERNS), re.M | re.S | re.I)
+reRTPDetails = re.compile(r"".join(RTP_DETAILS), re.M | re.S | re.I)
 
 ############################## BEGIN VARIABLES ###############################
 ############################## BEGIN CLASSES #################################
 
-class RTPDetailed:
+class RTPDetails:
     def __init__(self, **params) -> None:
         """
         Class that contains the RTP stat details of a BGW RTP session.
@@ -111,13 +112,19 @@ class RTPDetailed:
             setattr(self, k, v)
 
     @property
-    def is_ok(self) -> bool:
+    def nok(self) -> str:
         """
-        True if the QoS is 'ok' and BGW received RTP packets.
+        "None" - if there is no problem,
+        "QoS" - if QoS is not OK,
+        "Zero" - if RX packet count is 0
 
-        Return: Whether the QoS is 'ok'.
+        Return: "None", "QoS" or "Zero"
         """
-        return self.qos.lower() == "ok" and int(self.rx_rtp_packets) > 0
+        if self.qos.lower() == "ok" and int(self.rx_rtp_packets) > 0:
+            return "None"
+        if int(self.rx_rtp_packets) == 0:
+            return "Zero"
+        return "QoS"
 
     @property
     def is_active(self) -> bool:
@@ -173,21 +180,21 @@ class RTPDetailed:
 
     def __repr__(self) -> str:
         """
-        Return a string representation of the RTPDetailed object.
+        Return a string representation of the RTPDetails object.
 
-        :return: A string representation of the RTPDetailed object.
+        :return: A string representation of the RTPDetails object.
         """
-        return f"RTPDetailed({self.__dict__})"
+        return f"RTPDetails({self.__dict__})"
 
     def __str__(self) -> str:
         """
-        Return a string representation of the RTPDetailed object.
+        Return a string representation of the RTPDetails object.
 
         The string is formatted according to the SESSION_FORMAT string,
-        which is a template string that uses the attributes of the RTPDetailed
+        which is a template string that uses the attributes of the RTPDetails
         object as replacement values.
 
-        :return: A string representation of the RTPDetailed object
+        :return: A string representation of the RTPDetails object
         """
         return str(self.__dict__)
 
@@ -199,27 +206,27 @@ class RTPDetailed:
 
 def parse_rtpstat(global_id, rtpstat):
     """
-    Returns RTPDetailed instance with RTP stat attributes.
+    Returns RTPDetails instance with RTP stat attributes.
     """
     bgw_number, session_id = global_id.split(",")[2:]
 
     try:
-        m = reRTPDetailed.search(rtpstat)
+        m = reRTPDetails.search(rtpstat)
         if m:
             d = m.groupdict()
             d["bgw_number"] = bgw_number
             d["global_id"] = global_id
-            rtpdetailed = RTPDetailed(**d)
+            rtpdetails = RTPDetails(**d)
         else:
             logger.error(f"Unable to parse {session_id} from BGW {bgw_number}")
             logger.debug(repr(rtpstat))
-            rtpdetailed = None
+            rtpdetails = None
 
     except Exception as e:
         logger.error(f"Error {e.__class__.__name__} with session {session_id}")
         return None
 
-    return rtpdetailed
+    return rtpdetails
 
 ############################## END FUNCTIONS #################################
 
@@ -229,14 +236,14 @@ if __name__ == "__main__":
         "2025-12-14,10:06:07,001,00002": "\r\nshow rtp-stat detailed 00002\r\n\r\nSession-ID: 1\r\nStatus: Active, QOS: Ok, EngineId: 10\r\nStart-Time: 2025-12-14,10:06:07, End-Time: -\r\nDuration: - \r\nCName: gwp@10.10.48.58\r\nPhone: \r\nLocal-Address: 192.168.110.110:2052 SSRC 1653399062\r\nRemote-Address: 10.10.48.192:35000 SSRC 2704961869 (0)\r\nSamples: 0 (5 sec)\r\n\r\nCodec:\r\nG711U 200B 20mS srtpAesCm128HmacSha180, Silence-suppression(Tx/Rx) Disabled/Disabled, Play-Time 334.720sec, Loss 0.8% #0, Avg-Loss 0.8%, RTT 0mS #0, Avg-RTT 0mS, JBuf-under/overruns 0.0%/0.0%, Jbuf-Delay 22mS, Max-Jbuf-Delay 22mS\r\n\r\nReceived-RTP:\r\nPackets 1, Loss 0.3% #0, Avg-Loss 0.3%, RTT 0mS #0, Avg-RTT 0mS, Jitter 2mS #0, Avg-Jitter 2mS, TTL(last/min/max) 56/56/56, Duplicates 0, Seq-Fall 0, DSCP 0, L2Pri 0, RTCP 0, Flow-Label 2\r\n\r\nTransmitted-RTP:\r\nVLAN 0, DSCP 46, L2Pri 0, RTCP 10, Flow-Label 0\r\n\r\nRemote-Statistics:\r\nLoss 0.0% #0, Avg-Loss 0.0%, Jitter 0mS #0, Avg-Jitter 0mS\r\n\r\nEcho-Cancellation:\r\nLoss 0dB #2, Len 0mS\r\n\r\nRSVP:\r\nStatus Unused, Failures 0\n",
     }
     for global_id, value in d.items():
-        rtpdetailed = parse_rtpstat(global_id, value)
-        if rtpdetailed:
-            print(rtpdetailed.bgw_number)
-            print(rtpdetailed.rx_rtp_packets)
-            print(rtpdetailed.is_ok)
-            print(rtpdetailed.is_active)
-            print(rtpdetailed.local_ssrc_hex)
-            print(rtpdetailed.remote_ssrc_hex)
-            print(rtpdetailed.start_datetime)
-            print(rtpdetailed.end_datetime)
-            print(rtpdetailed.duration_secs)
+        rtpdetails = parse_rtpstat(global_id, value)
+        if rtpdetails:
+            print(rtpdetails.bgw_number)
+            print(rtpdetails.rx_rtp_packets)
+            print(rtpdetails.nok)
+            print(rtpdetails.is_active)
+            print(rtpdetails.local_ssrc_hex)
+            print(rtpdetails.remote_ssrc_hex)
+            print(rtpdetails.start_datetime)
+            print(rtpdetails.end_datetime)
+            print(rtpdetails.duration_secs)

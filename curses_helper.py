@@ -67,15 +67,18 @@ def terminal_context(term_type="xterm-256color"):
 def init_colors():    
     curses.start_color()
     curses.use_default_colors()
-    
-    for i in range(0, curses.COLORS):
+
+    max_pairs = min(curses.COLORS, curses.COLOR_PAIRS - 1)
+    for i in range(max_pairs):
         curses.init_pair(i + 1, i, -1)
+
+    special_pair = min(1, curses.COLOR_PAIRS - 1)
+    fg = 21 if curses.COLORS > 21 else curses.COLOR_CYAN
+    bg = 246 if curses.COLORS > 246 else -1
+    curses.init_pair(special_pair, fg, bg)
     
-    curses.init_pair(255, 21, 247)
 
-############################## END FUNCTIONS #################################
-
-def _show_curses_colors(stdscr):
+def show_curses_colors(stdscr):
     init_colors()
     
     maxy, _ = stdscr.getmaxyx()
@@ -87,19 +90,24 @@ def _show_curses_colors(stdscr):
         for columns, block in enumerate(range(0, curses.COLORS, maxy)):
             for ypos in range(0, maxy):
                 
-                xpos = columns * 4
+                xpos = columns * 13
                 color_pair = block + ypos
-                color = curses.color_pair(color_pair)
+                color = curses.color_pair(color_pair)|attrs[c]
+                text = f"{color_pair}({str(color)})"
                 
                 try:
-                    stdscr.addstr(ypos, xpos, str(color_pair), color|attrs[c])
+                    stdscr.addstr(ypos, xpos, text, color)
                 except _curses.error:
                     pass
         
         stdscr.refresh()
         stdscr.getch()
+        stdscr.clear()
+        stdscr.refresh()
         c += 1
+
+############################## END FUNCTIONS #################################
 
 if __name__ == "__main__":
     with terminal_context("xterm-256color"):
-        curses.wrapper(_show_curses_colors)
+        curses.wrapper(show_curses_colors)

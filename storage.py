@@ -50,7 +50,9 @@ class SlicableOrderedDict(MutableMapping):
     """
 
     def __init__(
-        self, items: Optional[Dict] = None, maxlen: Optional[int] = None
+        self, items: Optional[Dict] = None,
+        maxlen: Optional[int] = None,
+        name: Optional[str] = None,
     ) -> None:
         """
         Initialize the MemoryStorage object.
@@ -62,10 +64,13 @@ class SlicableOrderedDict(MutableMapping):
         maxlen : int, optional
             Maximum length of the MemoryStorage. If exceeded, oldest items are
             discarded. If not provided, the MemoryStorage has no maximum length.
+        name : str, optional
+            Name of the storages
         """
         self._items = dict(items) if items else dict()
-        self._keys = deque(sorted(self._items.keys()) if items else [])
+        self._keys = sorted(self._items.keys()) if items else []
         self.maxlen = maxlen
+        self.name = name
 
     def __iter__(self) -> Iterator[Any]:
         """Return an iterator over the keys of the MemoryStorage."""
@@ -154,7 +159,7 @@ class SlicableOrderedDict(MutableMapping):
             self._items[key] = item
         else:
             if self.maxlen and len(self._items) == self.maxlen:
-                first_key = self._keys.popleft()
+                first_key = self._keys.pop(0)
                 del self._items[first_key]
             insort_left(self._keys, key)
             self._items[key] = item
@@ -294,8 +299,8 @@ class MemoryStorage(SlicableOrderedDict, AbstractRepository):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
 
-    def put(self, sessions: Dict[Any, Any]) -> None:
-        for k, v in sessions.items():
+    def put(self, keys: Dict[Any, Any]) -> None:
+        for k, v in keys.items():
             self[k] = v
 
     def get(

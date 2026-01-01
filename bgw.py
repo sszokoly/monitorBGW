@@ -3,6 +3,8 @@
 
 ############################## BEGIN IMPORTS #################################
 
+from asyncio.events import set_child_watcher
+from gc import set_threshold
 import re
 from typing import (
     Optional,
@@ -13,6 +15,7 @@ from queue import Queue
 from datetime import datetime
 
 ############################## END IMPORTS ###################################
+from utils import logger
 ############################## BEGIN CLASSES #################################
 
 class BGW:
@@ -30,12 +33,14 @@ class BGW:
         show_mg_list: str = "",
         show_port: str = "",
         show_rtp_stat_summary: str = "",
+        show_rtp_stat_thresholds: str = "",
         show_running_config: str = "",
         show_sla_monitor: str = "",
         show_system: str = "",
         show_temp: str = "",
         show_utilization: str = "",
         show_voip_dsp: str = "",
+        show_upload_status_10 = "",
         **kwargs,
     ) -> None:
         self.bgw_ip = bgw_ip
@@ -56,16 +61,20 @@ class BGW:
         self.show_mg_list = show_mg_list
         self.show_port = show_port
         self.show_rtp_stat_summary = show_rtp_stat_summary
+        self.show_rtp_stat_thresholds = show_rtp_stat_thresholds
         self.show_running_config = show_running_config
         self.show_sla_monitor = show_sla_monitor
         self.show_system = show_system
         self.show_temp = show_temp
         self.show_utilization = show_utilization
+        self.show_upload_status_10 = show_upload_status_10
         self.show_voip_dsp = show_voip_dsp
         self.queue = Queue()
+        self.poll_count = 0
         self._active_session = None
         self._announcements = None
         self._capture_service = None
+        self._capture_status = None
         self._chassis_hw = None
         self._comp_flash = None
         self._cpu_util = None
@@ -91,6 +100,8 @@ class BGW:
         self._mm_v8 = None
         self._mm_v10 = None
         self._model = None
+        self._packet_capture = ""
+        self._pcap_upload = ""
         self._port1 = None
         self._port1_status = None
         self._port1_neg = None
@@ -114,6 +125,7 @@ class BGW:
         self._temp = None
         self._total_session = None
         self._uptime = None
+        self._upload_status = None
 
     @property
     def active_session(self) -> str:
@@ -142,58 +154,167 @@ class BGW:
     @property
     def capture_service(self) -> str:
         """
-        Returns the capture service admin and running state.
+        Returns the capture service admin state and buffer size.
         """
-        if self.show_capture:
-            if self._capture_service is None:
-                m = re.search(r" service is (\w+) and (\w+)", self.show_capture)
-                admin_state = m.group(1) if m else "?"
-                running_state = m.group(2) if m else "?"
-                if admin_state == "disabled":
-                    self._capture_service = "disabled"
-                else:
-                    self._capture_service = f"{admin_state}/{running_state}"
+        if not self.show_capture:
+            return "NA"
+        
+        if self._capture_service is not None:
             return self._capture_service
-        return "NA"
+        
+        m = re.search(r"Capture service is (\w+)", self.show_capture)
+        state = m.group(1) if m else ""
+        m = re.search(r"Current buffer size is (\d+) KB", self.show_capture)
+        size = m.group(1) if m else ""
+        self._capture_service = f"{state} ({size:>5})"
+        return self._capture_service
+
+    @property
+    def capture_status(self) -> str:
+        if not self.show_capture or "try again" in self.show_capture:
+            status = "NA"
+
+        elif "disabled" in self.capture_service:
+            status = "inactive"
+
+        else:
+            m = re.search(r"Capture service is \w+ and (\w+)", self.show_capture)
+            status = m.group(1) if m else ""
+
+            m = re.search(r"buffer occupancy: (\d+)\.", self.show_capture)
+            occ = f"({m.group(1):>2}%)" if m else ""
+
+            if (
+                "Actual capture stopped" in self.show_capture or
+                "and inactive" in self.show_capture
+            ):
+                status = f"stopped {occ}" if occ else "stopped"
+
+            elif "enabled and active" in self.show_capture:
+                status = f"running {occ}" if occ else "running"
+            else:
+                status = ""
+
+        return status
+
+    @property
+    def packet_capture(self):
+        val = (self._packet_capture or "").strip().lower()
+        if val.startswith(("starting", "stopping")):
+            return self._packet_capture
+        return self.capture_status
+
+    @packet_capture.setter
+    def packet_capture(self, value: str) -> None:
+        current = getattr(self, "_packet_capture", "NA")
+
+        value = (value or "").strip()
+        current = (current or "").strip()
+
+        def base_state(s: str) -> str:
+            s = s.lower()
+            if not s:
+                return ""
+            if s == "na":
+                return "NA"
+            for st in ("starting", "stopping", "running", "stopped", "disabled"):
+                if s.startswith(st):
+                    return st
+            return s
+
+        cur_base = base_state(current)
+        val_base = base_state(value)
+
+        # Always allow unknown
+        if val_base in ("", "NA"):
+            self._packet_capture = "NA" if val_base == "NA" else ""
+            return
+
+        # Always allow entering transitional states
+        if val_base in ("starting", "stopping"):
+            self._packet_capture = value
+            return
+
+        # Allow updates within same base state (refresh %)
+        if cur_base == val_base and val_base in ("running", "stopped"):
+            self._packet_capture = value
+            return
+
+        # Recover from unknown → real states
+        if cur_base in ("", "NA"):
+            if val_base in ("running", "stopped", "disabled"):
+                self._packet_capture = value
+            return
+
+        # Transitional rules
+        if cur_base == "starting":
+            if val_base == "running":
+                self._packet_capture = value
+            return
+
+        if cur_base == "stopping":
+            if val_base == "stopped":
+                self._packet_capture = value
+            return
+
+        # Normal rules
+        if cur_base == "running" and val_base == "stopped":
+            self._packet_capture = value
+            return
+
+    @property
+    def pcap_upload(self):
+        if self._pcap_upload:
+            return self._pcap_upload
+        return self.upload_status
+
+    @pcap_upload.setter
+    def pcap_upload(self, value):
+        self._pcap_upload = value
 
     @property
     def chassis_hw(self) -> str:
         """
         Returns the chassis hardware version as a string.
         """
-        if self.show_system:
-            if self._chassis_hw is None:
-                vintage_search = re.search(
-                    r"Chassis HW Vintage\s+:\s+(\S+)", self.show_system
-                )
-                vintage = vintage_search.group(1) if vintage_search else "?"
-
-                suffix_search = re.search(
-                    r"Chassis HW Suffix\s+:\s+(\S+)", self.show_system
-                )
-                suffix = suffix_search.group(1) if suffix_search else "?"
-
-                self._chassis_hw = f"{vintage}{suffix}"
+        if not self.show_system:
+            return "NA"
+        
+        if self._chassis_hw is not None:
             return self._chassis_hw
-        return "NA"
+        
+        m = re.search(r"HW Vintage\s+:\s+(\S+)", self.show_system)
+        vintage = m.group(1) if m else ""
+
+        m = re.search(r"HW Suffix\s+:\s+(\S+)", self.show_system)
+        suffix = m.group(1) if m else ""
+
+        self._chassis_hw = f"{vintage}{suffix}"
+        
+        return self._chassis_hw
+
 
     @property
     def comp_flash(self) -> str:
         """
         Returns the compact flash memory if installed.
         """
-        if self.show_system:
-            if self._comp_flash is None:
-                m = re.search(r"Flash Memory\s+:\s+(.*)", self.show_system)
-                if m:
-                    if "No" in m.group(1):
-                        self._comp_flash = ""
-                    else:
-                        self._comp_flash = m.group(1).replace(" ", "")
-                else:
-                    self._comp_flash = ""
+        if not self.show_system:
+            return "NA"
+        
+        if self._comp_flash is not None:
             return self._comp_flash
-        return "NA"
+        
+        m = re.search(r"Flash Memory\s+:\s+(.*)", self.show_system)
+        if m:
+            if "No" in m.group(1):
+                self._comp_flash = ""
+            else:
+                self._comp_flash = m.group(1).replace(" ", "")
+        else:
+            self._comp_flash = ""
+        
+        return self._comp_flash
 
     @property
     def cpu_util(self) -> str:
@@ -201,8 +322,8 @@ class BGW:
         Returns the last 5s and 60s CPU utilization as a string in percentage.
         """
         if self.show_utilization:
-            m = re.search(r"10\s+(\d+)%\s+(\d+)%", self.show_utilization)
-            self._cpu_util = f"{m.group(1)}%/{m.group(2)}%" if m else "?/?"
+            m = re.search(r"10\s+\d+%\s+(\d+)%", self.show_utilization)
+            self._cpu_util = f"{m.group(1)}%" if m else ""
             return self._cpu_util
         return "NA"
 
@@ -211,29 +332,36 @@ class BGW:
         """
         Returns the total number of DSPs as a string.
         """
-        if self.show_system:
-            if self._dsp is None:
-                m = re.findall(
-                    r"Media Socket .*?: M?P?(\d+) ", self.show_system
-                )
-                self._dsp = str(sum(int(x) for x in m)) if m else "?"
+        if not self.show_system:
+            return "NA"
+            
+        if self._dsp is not None:
             return self._dsp
-        return "NA"
+            
+        m = re.findall(r"Media Socket .*?: M?P?(\d+) ", self.show_system)
+        self._dsp = str(sum(int(x) for x in m)) if m else ""
+        
+        return self._dsp
 
     @property
     def faults(self) -> str:
         """
         Returns the number of faults as string.
         """
-        if self.show_faults:
-            if self._faults is None:
-                if "No Fault Messages" in self.show_faults:
-                    self._faults = 0
-                else:
-                    m = re.findall(r"\s+\+ (\S+)", self.show_faults)
-                    self._faults = len(m)
-            return str(self._faults)
-        return "NA"
+        if not self.show_faults:
+            return "NA"
+    
+        if self._faults is not None:
+            return self._faults
+        
+        if "No Fault Messages" in self.show_faults:
+            self._faults = "0"
+        else:
+            m = re.findall(r"\s+\+ (\S+)", self.show_faults)
+            self._faults = str(len(m))
+        
+        return self._faults
+
 
     @property
     def fw(self) -> str:
@@ -260,16 +388,16 @@ class BGW:
                 hw_suffix = m.group(1) if m else "?"
                 self._hw = f"{hw_vintage}{hw_suffix}"
             return self._hw
-        return "NA"
+        return ""
 
     @property
     def last_seen_time(self) -> str:
         """
         Returns the last seen time as a string in 24h format.
         """
-        if self.last_seen:
-            return f"{self.last_seen:{'%H:%M:%S'}}"
-        return "NA"
+        if self.last_seen_dt:
+            return f"{self.last_seen_dt:{'%H:%M:%S'}}"
+        return ""
 
     @property
     def lldp(self) -> str:
@@ -290,12 +418,15 @@ class BGW:
         """
         Returns the system location as a string.
         """
-        if self.show_system:
-            if self._location is None:
-                m = re.search(r"System Location\s+:\s+(\S+)", self.show_system)
-                self._location = m.group(1) if m else ""
+        if not self.show_system:
+            return "NA"
+    
+        if self._location is not None:
             return self._location
-        return "NA"
+            
+        m = re.search(r"System Location \s+: (\S+)", self.show_system)
+        self._location = m.group(1) if m else ""
+        return self._location
 
     @property
     def mac(self) -> str:
@@ -314,33 +445,40 @@ class BGW:
         """
         Returns the mainboard hardware version as a string.
         """
-        if self.show_system:
-            if self._mainboard_hw is None:
-                vintage = re.search(
-                    r"Mainboard HW Vintage\s+:\s+(\S+)", self.show_system
-                )
-                vintage = vintage.group(1) if vintage else "?"
-
-                suffix = re.search(
-                    r"Mainboard HW Suffix\s+:\s+(\S+)", self.show_system
-                )
-                suffix = suffix.group(1) if suffix else "?"
-
-                self._mainboard_hw = f"{vintage}{suffix}"
+        if not self.show_system:
+            return "NA"
+        
+        if self._mainboard_hw is not None:
             return self._mainboard_hw
-        return "NA"
+
+        m = re.search(r"Mainboard HW Vintage\s+:\s+(\S+)", self.show_system)
+        vintage = m.group(1) if m else "N"
+
+        m = re.search(r"Mainboard HW Suffix\s+:\s+(\S+)", self.show_system)
+        suffix = m.group(1) if m else "A"
+
+        self._mainboard_hw = f"{vintage}{suffix}"
+        return self._mainboard_hw
 
     @property
     def memory(self) -> str:
         """
         Returns the total memory as a string in the format "<number>MB".
         """
-        if self.show_system:
-            if self._memory is None:
-                m = re.findall(r"Memory #\d+\s+:\s+(\S+)", self.show_system)
-                self._memory = f"{sum(self._to_mbyte(x) for x in m)}MB"
+        if not self.show_system:
+            return "NA"
+        
+        if self._memory is not None:
             return self._memory
-        return "NA"
+
+        if self.model and self.model.lower().startswith("g430"):
+            m = re.search(r"RAM Memory \s+:\s+(\S+)", self.show_system)
+            self._memory = m.group(1) if m else ""
+            return self._memory
+
+        m = re.findall(r"Memory #\d+\s+:\s+(\S+)", self.show_system)
+        self._memory = f"{sum(self._to_mbyte(x) for x in m)}MB" if m else ""
+        return self._memory
 
     @property
     def mm_groupdict(self) -> Dict[str, Dict[str, str]]:
@@ -627,24 +765,35 @@ class BGW:
         """
         Returns the Power Supply Unit 1 as a string.
         """
-        if self.show_system:
-            if self._psu1 is None:
-                m = re.search(r"PSU #1\s+:\s+\S+ (\S+)", self.show_system)
-                self._psu1 = m.group(1) if m else ""
+        if not self.show_system:
+            return "NA"
+
+        if self._psu1 is not None:
             return self._psu1
-        return "NA"
+
+        if self.model and self.model.lower().startswith("g430"):
+            m = re.search(r"Main PSU \s+:\s+(\S+)", self.show_system)
+            self._psu1 = m.group(1) if m else ""
+            return self._psu1
+
+        m = re.search(r"PSU #1\s+:\s+\S+ (\S+)", self.show_system)
+        self._psu1 = m.group(1) if m and "W" in m.group(1) else ""
+        return self._psu1
 
     @property
     def psu2(self) -> str:
         """
         Returns the Power Supply Unit 2 as a string.
         """
-        if self.show_system:
-            if self._psu2 is None:
-                m = re.search(r"PSU #2\s+:\s+\S+ (\S+)", self.show_system)
-                self._psu2 = m.group(1) if m else ""
+        if not self.show_system:
+            return "NA"
+
+        if self._psu2 is not None:
             return self._psu2
-        return "NA"
+
+        m = re.search(r"PSU #2\s+:\s+\S+ (\S+)", self.show_system)
+        self._psu2 = m.group(1) if m and "W" in m.group(1) else ""
+        return self._psu2
 
     @property
     def ram_util(self) -> str:
@@ -652,7 +801,7 @@ class BGW:
         Returns the current RAM utilization as percentage.
         """
         if self.show_utilization:
-            m = re.search(r"10\s+S+\s+\S+\s+(\d+)%", self.show_utilization)
+            m = re.search(r"10\s+\S+\s+\S+\s+(\d+)%", self.show_utilization)
             self._ram_util = f"{m.group(1)}%" if m else ""
             return self._ram_util
         return "NA"
@@ -715,42 +864,36 @@ class BGW:
         "v2" if only SNMPv2 is configured, "v3" if only SNMPv3
         is configured, and "NA" if neither is configured.
         """
-        if self.show_running_config:
-            if self._snmp is None:
-                snmp = []
-                lines = [
-                    line.strip()
-                    for line in self.show_running_config.splitlines()
-                ]
-
-                if any(
-                    line.startswith("snmp-server community") for line in lines
-                ):
-                    snmp.append("2")
-
-                if any(
-                    line.startswith("encrypted-snmp-server community")
-                    for line in lines
-                ):
-                    snmp.append("3")
-
-                self._snmp = "v" + "&".join(snmp) if snmp else ""
+        if not self.show_running_config:
+            return "NA"
+        
+        if self._snmp is not None:
             return self._snmp
-        return "NA"
+
+        snmp = []
+        if "snmp-server community read-only" in self.show_running_config:
+            snmp.append("2")
+
+        if "encrypted-snmp-server user" in self.show_running_config:
+            snmp.append("3")
+
+        self._snmp = "v" + "&".join(snmp) if snmp else ""
+        return self._snmp
 
     @property
     def snmp_trap(self) -> str:
         """
         Returns "enabled" if SNMP traps are configured and "disabled" if not.
         """
-        if self.show_running_config:
-            if self._snmp_trap is None:
-                m = re.search(
-                    r"snmp-server bgw_ip (\S+) traps", self.show_running_config
-                )
-                self._snmp_trap = "enabled" if m else "disabled"
+        if not self.show_running_config:
+            return "NA"
+
+        if self._snmp_trap is not None:
             return self._snmp_trap
-        return "NA"
+
+        m = re.search(r"snmp-server host (\S+) trap", self.show_running_config)
+        self._snmp_trap = "enabled" if m else "disabled"
+        return self._snmp_trap
 
     @property
     def temp(self) -> str:
@@ -777,6 +920,22 @@ class BGW:
             )
             return m.group(1) if m else "?/?"
         return "NA"
+
+    @property
+    def upload_status(self) -> str:
+        if not self.show_upload_status_10:
+            return ""
+        
+        m = re.search(r"Running state\s+:\s+(\S+)", self.show_upload_status_10)
+        status = m.group(1).lower() if m else ""
+        m = re.search(r"Failure display\s+:\s+(\S+)", self.show_upload_status_10)
+        failure = m.group(1).lower() if m else ""
+        
+        if status == "executing":
+            return status
+        if failure and failure != "(null)":
+            return "failed"
+        return status
 
     @property
     def uptime(self) -> str:
@@ -813,15 +972,6 @@ class BGW:
                 pass
         return str(inuse)
 
-    @property
-    def is_capturing(self) -> bool:
-        if self._capture_service:
-            return (
-                "enabled/active" in self._capture_service
-                and "capture stopped" not in self._capture_service
-            )
-        return False
-
     def update(
         self,
         bgw_name: Optional[str] = None,
@@ -852,17 +1002,23 @@ class BGW:
 
         if last_seen:
             last_seen_dt = datetime.strptime(last_seen, "%Y-%m-%d,%H:%M:%S")
-            if not self.last_seen_dt:
-                self.last_seen_dt = last_seen_dt
 
-            delta = last_seen_dt - self.last_seen_dt
-            if delta:
-                delta_secs = delta.total_seconds()
+            if self.last_seen_dt is not None:
+                delta_secs = (last_seen_dt - self.last_seen_dt).total_seconds()
+
+                self.poll_count += 1
                 self.avg_poll_secs = round(
-                    (self.avg_poll_secs + delta_secs) / 2, 1
+                    (
+                        (self.avg_poll_secs * (self.poll_count - 1)) + delta_secs
+                    ) / self.poll_count,
+                    1
                 )
             else:
+                self.poll_count = 1
                 self.avg_poll_secs = self.polling_secs
+
+            # IMPORTANT: update reference timestamp
+            self.last_seen_dt = last_seen_dt
 
             if not self.bgw_number and bgw_number:
                 self.bgw_number = bgw_number
@@ -874,7 +1030,19 @@ class BGW:
         if commands:
             for cmd, value in commands.items():
                 bgw_attr = cmd.replace(" ", "_").replace("-", "_")
-                setattr(self, bgw_attr, value)
+                
+                try:
+                    setattr(self, bgw_attr, value)
+                except AttributeError as e:
+                    logger.error(f"{e} {bgw_attr} - {self.bgw_ip}")
+                
+                if cmd == "show capture":
+                    self.packet_capture = self.capture_status
+                    
+                if cmd == "show upload status 10":
+                    self.pcap_upload = self.upload_status
+                    if self.upload_status == "executing":
+                        self.queue.put_nowait("show upload status 10")
 
     def _port_groupdict(self, idx: int) -> Dict[str, str]:
         """

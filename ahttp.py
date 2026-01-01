@@ -17,13 +17,16 @@ import asyncio
 import os
 from urllib.parse import unquote
 from utils import logger, config
+from asyncio import Queue
+from datetime import datetime
 
 ############################## END IMPORTS ###################################
 ############################## BEGIN CLASSES #################################
 
 class FileUploadProtocol(asyncio.Protocol):
-    def __init__(self, upload_dir):
+    def __init__(self, upload_dir, upload_queue):
         self.upload_dir = upload_dir
+        self.upload_queue = upload_queue if upload_queue else Queue()
         self.transport = None
         self.buffer = b""
         self.headers = {}
@@ -37,6 +40,11 @@ class FileUploadProtocol(asyncio.Protocol):
         self.transport = transport
         peername = transport.get_extra_info("peername")
         logger.info(f"Connection from {peername[0]}:{peername[1]}")
+        
+        if peername:
+            self.remote_ip = peername[0]
+        else:
+            self.remote_ip = None
 
     def data_received(self, data):
         self.buffer += data
@@ -114,6 +122,16 @@ class FileUploadProtocol(asyncio.Protocol):
 
             file_size = len(self.body[: self.content_length])
             logger.info(f"Received {filename} ({file_size} bytes) via HTTP")
+
+            item = {
+                "remote_ip": self.remote_ip,
+                "filename": filename,
+                "file_size": file_size,
+                "received_timestamp": datetime.now()
+            }
+            
+            self.upload_queue.put_nowait(item)
+            logger.info(f"Put {item} in upload_queue")
             
             self.send_response(
                 201,
@@ -148,12 +166,16 @@ class FileUploadProtocol(asyncio.Protocol):
 ############################## END CLASSES ###################################
 ############################## BEGIN FUNCTIONS ###############################
 
-async def start_http_server(host, port, upload_dir):
+async def start_http_server(host, port, upload_dir, upload_queue):
     loop = asyncio.get_event_loop()
 
-    os.makedirs(upload_dir, exist_ok=True)
+    try:
+        os.makedirs(upload_dir, exist_ok=True)
+    except Exception as e:
+        logger.error(f"{e} while creating {upload_dir}")
+    
     server = await loop.create_server(
-        lambda: FileUploadProtocol(upload_dir), host, port
+        lambda: FileUploadProtocol(upload_dir, upload_queue), host, port
     )
 
     logger.info(f"HTTP server started on http://{host}:{port}")
