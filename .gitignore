@@ -140,6 +140,6 @@ hosts.*
 .vscode
 ncs.yml
 facts_cache
-uploads/
-other/
+uploads/*
+other/*
 src/*.log
