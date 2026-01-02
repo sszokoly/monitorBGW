@@ -5,14 +5,14 @@
 # version 0.1 Dec 2026
 ############################# Template Variables #############################
 
-set bgw_ip "10.10.48.58"
-set bgw_user "root"
-set bgw_passwd "cmb@Dm1n"
-set rtp_stats 1
-set prev_last_session_id "00053"
-set prev_active_session_ids { "00030" }
-set commands { "capture start" "show system" }
-set debug 1
+set lan_ip {lan_ip}
+set user {user}
+set passwd {passwd}
+set rtp_stats {rtp_stats}
+set prev_last_session_id {prev_last_session_id}
+set prev_active_session_ids {prev_active_session_ids}
+set commands {commands}
+set debug {debug}
 
 ############################## Expect Variables ##############################
 
@@ -20,13 +20,13 @@ set options [list -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null]
 set timeout 10
 set prompt "\)# "
 set last_session_id ""
+set rc 0
 array set commands_array {}
 array set rtp_sessions_array {}
 log_user 0
-set rc 0
 
 if {$debug} {
-    set log_file "expect_debug_$bgw_ip.log"
+    set log_file "expect_debug_$lan_ip.log"
     if {[file exists $log_file]} {
         file delete $log_file
     }
@@ -48,13 +48,13 @@ proc json_escape {str} {
 }
 
 proc to_json {} {
-    global bgw_ip bgw_name bgw_number last_poll_time last_session_id \
+    global lan_ip gw_name gw_number last_seen last_session_id \
            commands_array rtp_sessions_array
     set json "{"
-    append json "\"bgw_ip\": \"[json_escape $bgw_ip]\", "
-    append json "\"bgw_name\": \"[json_escape $bgw_name]\", "
-    append json "\"bgw_number\": \"[json_escape $bgw_number]\", "
-    append json "\"last_poll_time\": \"[json_escape $last_poll_time]\", "
+    append json "\"lan_ip\": \"[json_escape $lan_ip]\", "
+    append json "\"gw_name\": \"[json_escape $gw_name]\", "
+    append json "\"gw_number\": \"[json_escape $gw_number]\", "
+    append json "\"last_seen\": \"[json_escape $last_seen]\", "
     append json "\"last_session_id\": \"[json_escape $last_session_id]\", "
     append json "\"commands\": {"
     set first 1
@@ -131,7 +131,7 @@ proc exec_command {command {store_output 0}} {
     global debug dbg rc commands_array
     
     if {$debug} {
-        puts $dbg "DEBUG: Executing '$command'"
+        puts $dbg "DEBUG: Execute '$command'"
         flush $dbg
     }
     
@@ -156,6 +156,7 @@ proc exec_command {command {store_output 0}} {
 # Execute a list of commands, optionally stopping on first error
 proc exec_commands {cmd_list {stop_on_error 0} {store_output 0}} {
     foreach command $cmd_list {
+        
         set output [exec_command $command $store_output]
         if {$output eq "" && $stop_on_error} {
             return 1
@@ -216,7 +217,13 @@ proc get_new_session_ids {} {
 }
 
 proc capture_setup {output} {
+    global debug dbg
     set setup_commands [list]
+
+    if {$debug} {
+        puts $dbg "DEBUG: Begin 'capture_setup' with output '$output'"
+        flush $dbg
+    }
 
     if {[string first "Buffer mode is non-cyclic" $output] == -1} {
         lappend setup_commands "capture buffer-mode non-cyclic"
@@ -225,35 +232,51 @@ proc capture_setup {output} {
         lappend setup_commands "capture max-frame-size 4096"
     }
     if {[string first "Capture list 501" $output] == -1} {
-        lappend setup_commands "no ip capture-list 501"
-        lappend setup_commands "ip capture-list 501"
-        lappend setup_commands "name udp"
-        lappend setup_commands "ip-rule 1"
-        lappend setup_commands "ip-protocol udp"
-        lappend setup_commands "composite-operation Capture"
-        lappend setup_commands "exit"
-        lappend setup_commands "ip-rule default"
-        lappend setup_commands "composite-operation No-Capture"
-        lappend setup_commands "exit"
-        lappend setup_commands "exit"
-        lappend setup_commands "capture filter-group 501"
+        lappend setup_commands \
+            "no ip capture-list 501" \
+            "ip capture-list 501" \
+            "name udp" \
+            "ip-rule 1" \
+            "ip-protocol udp" \
+            "composite-operation Capture" \
+            "exit" \
+            "ip-rule default" \
+            "composite-operation No-Capture" \
+            "exit" \
+            "exit" \
+            "capture filter-group 501"
     }
 
-    # Execute setup commands, stop on first error
+    if {[llength $setup_commands] == 0} {
+        if {$debug} { puts $dbg "DEBUG: Execute: <none>"; flush $dbg }
+        return 0
+    }
+
+    if {$debug} {
+        puts $dbg "DEBUG: Execute '$setup_commands'"
+        flush $dbg
+    }
     return [exec_commands $setup_commands 1 0]
 }
 
 proc capture_start {} {
-    global commands
+    global commands debug dbg
     
-    # Remove "capture start" from commands list
+    if {$debug} {
+        puts $dbg "DEBUG: Begin 'capture_start' with commands '$commands'"
+        flush $dbg
+    }
+
+    # Remove "capture start" and "show capture" from commands list
     set commands [lsearch -all -inline -not -exact $commands "capture start"]
-    
+    set commands [lsearch -all -inline -not -exact $commands "show capture"]
+
     set output [exec_command "show capture"]
+
     if {$output eq ""} {
         return
     }
-    
+
     set status [capture_setup $output]
     if {$status != 0} {
         return
@@ -262,6 +285,11 @@ proc capture_start {} {
     lappend commands "clear capture-buffer"
     lappend commands "capture start"
     lappend commands "show capture"
+
+    if {$debug} {
+        puts $dbg "DEBUG: End 'capture_start' with commands '$commands'"
+        flush $dbg
+    }
 }
 
 proc merge_lists {list1 list2} {
@@ -273,11 +301,11 @@ proc merge_lists {list1 list2} {
 #################################### Main ####################################
 
 # Spawn SSH connection
-spawn ssh -q {*}$options $bgw_user@$bgw_ip
+spawn ssh -q {*}$options $user@$lan_ip
 
 # Handle SSH login
 expect {
-    "Password: " {send "$bgw_passwd\n"}
+    "Password: " {send "$passwd\n"}
     timeout {
         puts -nonewline stderr "ExpectTimeout"; exit 254
     }
@@ -293,15 +321,19 @@ expect {
 }
 
 # Extract gateway name and number from prompt
-set bgw_name ""; set bgw_number ""
-regexp {([^\s]+)-(\d+)[\(]} $expect_out(buffer) "" bgw_name bgw_number
+set gw_name ""; set gw_number ""
+regexp {([^\s]+)-(\d+)[\(]} $expect_out(buffer) "" gw_name gw_number
 
-# Set last_poll_time
-set last_poll_time [exec date "+%Y-%m-%d,%H:%M:%S"]
+# Set last_seen
+set last_seen [exec date "+%Y-%m-%d,%H:%M:%S"]
 
 # Start capture if requested
 if {[lsearch -exact $commands "capture start"] != -1} {
     capture_start
+}
+
+if {[lsearch -glob $commands "copy capture-file*"] != -1} {
+    lappend commands "show upload status 10"
 }
 
 # Execute all commands and store outputs
@@ -329,7 +361,7 @@ if {$rtp_stats} {
             set matches [regexp -inline $pattern $output]
             if {[llength $matches] > 1} {
                 set start [lindex $matches 1]
-                set global_id [format "%s,%s,%s" $start $bgw_ip $session_id]
+                set global_id [format "%s,%s,%s" $start $gw_number $session_id]
                 set rtp_sessions_array($global_id) $output
             }
         }

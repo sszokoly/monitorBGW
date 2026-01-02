@@ -7,10 +7,12 @@ import _curses, curses
 import os
 from contextlib import contextmanager
 from typing import List
-from utils import logger
 
-############################## END IMPORTS ###################################
-############################## BEGIN FUNCTIONS ###############################
+############################## END IMPORTS ####################################
+
+from config import logger
+
+############################## BEGIN FUNCTIONS ################################
 
 def get_available_terminal_types() -> List[str]:
     """
@@ -64,6 +66,8 @@ def terminal_context(term_type="xterm-256color"):
             os.environ["TERM"] = old_term
             logger.info(f"Changed terminal to '{old_term}'")
 
+############################## END FUNCTIONS ##################################
+
 def init_colors():    
     curses.start_color()
     curses.use_default_colors()
@@ -76,7 +80,6 @@ def init_colors():
     fg = 21 if curses.COLORS > 21 else curses.COLOR_CYAN
     bg = 246 if curses.COLORS > 246 else -1
     curses.init_pair(special_pair, fg, bg)
-    
 
 def show_curses_colors(stdscr):
     init_colors()
@@ -84,29 +87,26 @@ def show_curses_colors(stdscr):
     maxy, _ = stdscr.getmaxyx()
     attrs = (curses.A_NORMAL, curses.A_DIM, curses.A_BOLD, curses.A_STANDOUT)
     c = 0
-    
+
     while c < len(attrs):
-        
         for columns, block in enumerate(range(0, curses.COLORS, maxy)):
             for ypos in range(0, maxy):
-                
+
                 xpos = columns * 13
                 color_pair = block + ypos
                 color = curses.color_pair(color_pair)|attrs[c]
                 text = f"{color_pair}({str(color)})"
-                
+
                 try:
                     stdscr.addstr(ypos, xpos, text, color)
                 except _curses.error:
                     pass
-        
+
         stdscr.refresh()
         stdscr.getch()
         stdscr.clear()
         stdscr.refresh()
         c += 1
-
-############################## END FUNCTIONS #################################
 
 if __name__ == "__main__":
     with terminal_context("xterm-256color"):

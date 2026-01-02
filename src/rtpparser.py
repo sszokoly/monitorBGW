@@ -1,16 +1,17 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 
-############################## BEGIN IMPORTS #################################
+############################## BEGIN IMPORTS ##################################
 
 import re
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 
-############################## END IMPORTS ###################################
-from utils import logger
+############################## END IMPORTS ####################################
 
-############################## BEGIN VARIABLES ###############################
+from config import logger
+
+############################## BEGIN VARIABLES ################################
 
 RTP_DETAILS = (
     r".*?Session-ID: (?P<session_id>\d+)",
@@ -90,23 +91,46 @@ reRTPDetails = re.compile(r"".join(RTP_DETAILS), re.M | re.S | re.I)
 ############################## BEGIN VARIABLES ###############################
 ############################## BEGIN CLASSES #################################
 
-class RTPDetails:
-    def __init__(self, **params) -> None:
-        """
-        Class that contains the RTP stat details of a BGW RTP session.
+class RTPDetails(object):
+    """
+    RTP session details parsed from BGW RTP-Stat output.
 
-        :param params: keyword arguments.
+    This class is intentionally permissive: it defines a common baseline set of
+    attributes, then applies any extra keyword parameters via setattr(). This
+    makes it resilient to schema changes (new fields appearing in parsed data).
+
+    Attributes:
+        bgw_number: Gateway number / identifier.
+        global_id: Global RTP session identifier.
+        session_id: Session identifier (often numeric, stored as string).
+        qos: QoS status string (e.g. "ok", "bad").
+        rx_rtp_packets: Number of received RTP packets (string form).
+        status: Session status string (e.g. "Active", "Terminated").
+        local_ssrc: Local SSRC (string form, typically integer).
+        remote_ssrc: Remote SSRC (string form, typically integer).
+        start_time: Session start timestamp as "YYYY-mm-dd,HH:MM:SS".
+        end_time: Session end timestamp as "YYYY-mm-dd,HH:MM:SS" or "-".
+    """
+
+    def __init__(self, **params: Any) -> None:
         """
-        self.bgw_number: str = ""
-        self.global_id: str = ""
-        self.session_id: str = ""
-        self.qos: str = "ok"
-        self.rx_rtp_packets: str = "0"
-        self.status: str = ""
-        self.local_ssrc: str = ""
-        self.remote_ssrc: str = ""
-        self.start_time: str = ""
-        self.end_time: str = ""
+        Initialize RTPDetails.
+
+        Args:
+            **params:
+                Arbitrary RTP fields. Known keys overwrite the defaults.
+                Unknown keys are accepted and stored as attributes.
+        """
+        self.bgw_number = ""          # type: str
+        self.global_id = ""           # type: str
+        self.session_id = ""          # type: str
+        self.qos = "ok"               # type: str
+        self.rx_rtp_packets = "0"     # type: str
+        self.status = ""              # type: str
+        self.local_ssrc = ""          # type: str
+        self.remote_ssrc = ""         # type: str
+        self.start_time = ""          # type: str
+        self.end_time = ""            # type: str
 
         for k, v in params.items():
             setattr(self, k, v)
@@ -114,92 +138,139 @@ class RTPDetails:
     @property
     def nok(self) -> str:
         """
-        "None" - if there is no problem,
-        "QoS" - if QoS is not OK,
-        "Zero" - if RX packet count is 0
+        Return a simple issue marker for the session.
 
-        Return: "None", "QoS" or "Zero"
+        Returns:
+            "None": QoS is ok and RX packet count > 0
+            "Zero": RX packet count == 0
+            "QoS":  QoS is not ok (or RX packet parsing fails and QoS not ok)
         """
-        if self.qos.lower() == "ok" and int(self.rx_rtp_packets) > 0:
+        rx = self._safe_int(self.rx_rtp_packets)
+        if self.qos.lower() == "ok" and rx is not None and rx > 0:
             return "None"
-        if int(self.rx_rtp_packets) == 0:
+        if rx == 0:
             return "Zero"
         return "QoS"
 
     @property
     def is_active(self) -> bool:
         """
-        True of RTP is Terminated, False otherwise.
+        Whether the RTP session is currently active.
+
+        Note:
+            Despite the old comment in your code, the logic here treats any
+            status other than "Terminated" as active.
 
         Returns:
-            bool: True of RTP is Terminated, False otherwise.
+            True if status != "Terminated", otherwise False.
         """
         return self.status != "Terminated"
 
     @property
     def local_ssrc_hex(self) -> str:
         """
-        SSRC of local RTP in hexadecimal.
+        Local SSRC as a hexadecimal string.
 
         Returns:
-            str: SSRC of local RTP in hexadecimal.
+            Hex string like "0x1a2b3c4d", or "" if conversion fails.
         """
-        try:
-            return hex(int(self.local_ssrc))
-        except ValueError:
-            return ""
+        return self._safe_hex(self.local_ssrc)
 
     @property
     def remote_ssrc_hex(self) -> str:
-        try:
-            return hex(int(self.remote_ssrc))
-        except ValueError:
-            return ""
+        """
+        Remote SSRC as a hexadecimal string.
+
+        Returns:
+            Hex string like "0x1a2b3c4d", or "" if conversion fails.
+        """
+        return self._safe_hex(self.remote_ssrc)
 
     @property
     def start_datetime(self) -> Optional[datetime]:
-        if self.start_time:
-            return datetime.strptime(self.start_time, "%Y-%m-%d,%H:%M:%S")
-        return None
+        """
+        Parse start_time into a datetime.
+
+        Returns:
+            datetime if start_time is present and parseable, else None.
+        """
+        return self._parse_ts(self.start_time)
 
     @property
     def end_datetime(self) -> Optional[datetime]:
+        """
+        Parse end_time into a datetime.
+
+        Returns:
+            datetime if end_time is present, not "-", and parseable, else None.
+        """
         if not self.end_time or self.end_time == "-":
             return None
-        return datetime.strptime(self.end_time, "%Y-%m-%d,%H:%M:%S")
+        return self._parse_ts(self.end_time)
 
     @property
     def duration_secs(self) -> Optional[int]:
-        if self.start_datetime is None:
+        """
+        Session duration in seconds.
+
+        If end_time is missing or "-", duration is computed up to "now".
+
+        Returns:
+            Duration in seconds, or None if start time is unavailable.
+        """
+        start = self.start_datetime
+        if start is None:
             return None
 
-        if self.end_datetime is None:
-            return int((datetime.now() - self.start_datetime).total_seconds())
+        end = self.end_datetime
+        if end is None:
+            return int((datetime.now() - start).total_seconds())
+        return int((end - start).total_seconds())
 
-        return int((self.end_datetime - self.start_datetime).total_seconds())
+    def asdict(self) -> Dict[str, Any]:
+        """
+        Return a shallow dict of all attributes stored on this instance.
+
+        Returns:
+            Dict mapping attribute name to value.
+        """
+        return self.__dict__
 
     def __repr__(self) -> str:
-        """
-        Return a string representation of the RTPDetails object.
-
-        :return: A string representation of the RTPDetails object.
-        """
-        return f"RTPDetails({self.__dict__})"
+        """Debug representation."""
+        return "RTPDetails({})".format(self.__dict__)
 
     def __str__(self) -> str:
-        """
-        Return a string representation of the RTPDetails object.
-
-        The string is formatted according to the SESSION_FORMAT string,
-        which is a template string that uses the attributes of the RTPDetails
-        object as replacement values.
-
-        :return: A string representation of the RTPDetails object
-        """
+        """Human-readable representation (currently same as dict view)."""
         return str(self.__dict__)
 
-    def asdict(self):
-        return self.__dict__
+    # ---- helpers ---------------------------------------------------------
+
+    @staticmethod
+    def _safe_int(value: Any) -> Optional[int]:
+        """Convert value to int, returning None on failure."""
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _safe_hex(value: Any) -> str:
+        """Convert value to hex(int(value)), returning "" on failure."""
+        try:
+            return hex(int(value))
+        except (TypeError, ValueError):
+            return ""
+
+    @staticmethod
+    def _parse_ts(ts: Any) -> Optional[datetime]:
+        """Parse BGW timestamp format 'YYYY-mm-dd,HH:MM:SS'."""
+        if not ts:
+            return None
+        try:
+            return datetime.strptime(str(ts), "%Y-%m-%d,%H:%M:%S")
+        except (TypeError, ValueError):
+            return None
 
 ############################## END CLASSES ###################################
 ############################## BEGIN FUNCTIONS ###############################
@@ -208,17 +279,17 @@ def parse_rtpstat(global_id, rtpstat):
     """
     Returns RTPDetails instance with RTP stat attributes.
     """
-    bgw_number, session_id = global_id.split(",")[2:]
+    gw_number, session_id = global_id.split(",")[2:]
 
     try:
         m = reRTPDetails.search(rtpstat)
         if m:
             d = m.groupdict()
-            d["bgw_number"] = bgw_number
+            d["gw_number"] = gw_number
             d["global_id"] = global_id
             rtpdetails = RTPDetails(**d)
         else:
-            logger.error(f"Unable to parse {session_id} from BGW {bgw_number}")
+            logger.error(f"Unable to parse {session_id} from BGW {gw_number}")
             logger.debug(repr(rtpstat))
             rtpdetails = None
 

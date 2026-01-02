@@ -11,17 +11,19 @@ Examples:
     wget --method=PUT --body-file=gwcapture.pcap http://10.10.10.1:8080/mg.pcap
 """
 
-############################## BEGIN IMPORTS #################################
+############################## BEGIN IMPORTS ##################################
 
 import asyncio
 import os
 from urllib.parse import unquote
-from utils import logger, config
 from asyncio import Queue
 from datetime import datetime
 
-############################## END IMPORTS ###################################
-############################## BEGIN CLASSES #################################
+############################## END IMPORTS ####################################
+
+from config import logger, config
+
+############################## BEGIN AHTTP ####################################
 
 class FileUploadProtocol(asyncio.Protocol):
     def __init__(self, upload_dir, upload_queue):
@@ -73,7 +75,9 @@ class FileUploadProtocol(asyncio.Protocol):
                         key, value = line.split(":", 1)
                         self.headers[key.strip().lower()] = value.strip()
 
-                self.content_length = int(self.headers.get("content-length", 0))
+                self.content_length = int(
+                    self.headers.get("content-length", 0)
+                )
         else:
             # Accumulate body data
             self.body += data
@@ -129,10 +133,10 @@ class FileUploadProtocol(asyncio.Protocol):
                 "file_size": file_size,
                 "received_timestamp": datetime.now()
             }
-            
+
             self.upload_queue.put_nowait(item)
             logger.info(f"Put {item} in upload_queue")
-            
+
             self.send_response(
                 201,
                 "Created",
@@ -163,9 +167,6 @@ class FileUploadProtocol(asyncio.Protocol):
         logger.info(f"Connection lost {exc}")
         pass
 
-############################## END CLASSES ###################################
-############################## BEGIN FUNCTIONS ###############################
-
 async def start_http_server(host, port, upload_dir, upload_queue):
     loop = asyncio.get_event_loop()
 
@@ -194,13 +195,15 @@ async def start_http_server(host, port, upload_dir, upload_queue):
         await server.wait_closed()
         logger.info("HTTP server closed")
 
-############################## END FUNCTIONS #################################
+############################## END AHTTP ######################################
 
 if __name__ == "__main__":
-    from utils import asyncio_run
+    from async_loop import asyncio_run
+    from asyncio import Queue
     
-    port = config.get("http_port", 8080)
     host = "0.0.0.0"
+    port = config.get("http_port", 8080)
     upload_dir = config.get("upload_dir", "./")
-        
-    asyncio_run(start_http_server(host, port, upload_dir))
+    queue = Queue()
+
+    #asyncio_run(start_http_server(host, port, upload_dir, queue))
