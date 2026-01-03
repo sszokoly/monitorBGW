@@ -9,9 +9,10 @@ from typing import Optional, Set
 
 ############################## END IMPORTS ####################################
 
-from config import logger
+import logging
+logger = logging.getLogger(__name__)
 
-############################## BEGIN VARIABLES ################################
+############################## BEGIN FILTER ###################################
 
 FILTER_GROUPs = {
     "bgw": {
@@ -34,15 +35,12 @@ Filter examples:
   To discover only gateway 10.10.10.1 and 10.10.10.2
     -i 10.10.10.1|10.10.10.2  OR  -i 10.10.10.1,10.10.10.2
 """}
-############################## END VARIABLES ##################################
-############################## BEGIN CLASSES ##################################
 
 class NoExitArgumentParser(argparse.ArgumentParser):
     def error(self, message):
         raise ValueError(message)
 
-############################## END CLASSES ####################################
-############################## BEGIN FUNCTIONS ################################
+
 def is_valid_ipv4(ip: str) -> bool:
     """
     Validate whether a string is a valid IPv4 address.
@@ -239,7 +237,7 @@ def update_filter(
 
         logger.info(f"Updated '{key}' to '{groups[key]}'")
 
-############################## END FUNCTIONS ##################################
+############################## END FILTER #####################################
 
 def parse_and_validate_b(s):
     """Parse BGW number"""

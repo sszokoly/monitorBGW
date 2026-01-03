@@ -9,9 +9,10 @@ from typing import Any, Dict, Optional
 
 ############################## END IMPORTS ####################################
 
-from config import logger
+import logging
+logger = logging.getLogger(__name__)
 
-############################## BEGIN VARIABLES ################################
+############################## BEGIN RTPPARSER ################################
 
 RTP_DETAILS = (
     r".*?Session-ID: (?P<session_id>\d+)",
@@ -87,9 +88,6 @@ RTP_DETAILS = (
 )
 
 reRTPDetails = re.compile(r"".join(RTP_DETAILS), re.M | re.S | re.I)
-
-############################## BEGIN VARIABLES ###############################
-############################## BEGIN CLASSES #################################
 
 class RTPDetails(object):
     """
@@ -272,9 +270,6 @@ class RTPDetails(object):
         except (TypeError, ValueError):
             return None
 
-############################## END CLASSES ###################################
-############################## BEGIN FUNCTIONS ###############################
-
 def parse_rtpstat(global_id, rtpstat):
     """
     Returns RTPDetails instance with RTP stat attributes.
@@ -299,7 +294,7 @@ def parse_rtpstat(global_id, rtpstat):
 
     return rtpdetails
 
-############################## END FUNCTIONS #################################
+############################## END RTPPARSER ##################################
 
 if __name__ == "__main__":
     d = {

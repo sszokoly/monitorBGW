@@ -24,7 +24,7 @@ from typing import (
 )
 
 ############################## END IMPORTS ####################################
-############################## BEGIN VARIABLES ################################
+############################## BEGIN STORAGE ##################################
 
 class SupportsLessThan(Protocol):
     def __lt__(self, other: Any) -> bool:
@@ -32,9 +32,6 @@ class SupportsLessThan(Protocol):
 
 K = TypeVar("K", bound=SupportsLessThan)
 V = TypeVar("V")
-
-############################## END VARIABLES ##################################
-############################## BEGIN CLASSES ##################################
 
 class AbstractRepository(ABC, Generic[K, V]):
     """Abstract key/value repository interface."""
@@ -176,7 +173,12 @@ class MemoryStorage(SlicableOrderedDict[K, V], AbstractRepository[K, V]):
             key = slice(None, None)
         return self[key]
 
-############################## END CLASSES ###################################
+GWs = {}
+BGWs = MemoryStorage(name="BGWs")
+RTPs = MemoryStorage(maxlen=36, name="RTPs")
+PCAPs = MemoryStorage(name="PCAPs")
+
+############################## END STORAGE ####################################
 
 if __name__ == "__main__":
     storage = MemoryStorage(maxlen=3)

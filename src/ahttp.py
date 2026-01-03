@@ -1,16 +1,6 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 
-"""
-Async HTTP server that receives file uploads via PUT/POST requests.
-Compatible with Python 3.6+
-
-Examples:
-    curl -T mg.pcap http://10.10.10.1:8080/mg.pcap
-    curl -X PUT --data-binary @mg.pcap http://10.10.10.1:8080/mg.pcap
-    wget --method=PUT --body-file=gwcapture.pcap http://10.10.10.1:8080/mg.pcap
-"""
-
 ############################## BEGIN IMPORTS ##################################
 
 import asyncio
@@ -20,10 +10,19 @@ from asyncio import Queue
 from datetime import datetime
 
 ############################## END IMPORTS ####################################
-
-from config import logger, config
-
+import logging
+logger = logging.getLogger(__name__)
 ############################## BEGIN AHTTP ####################################
+
+"""
+Async HTTP server that receives file uploads via PUT/POST requests.
+Compatible with Python 3.6+
+
+Examples:
+    curl -T mg.pcap http://10.10.10.1:8080/mg.pcap
+    curl -X PUT --data-binary @mg.pcap http://10.10.10.1:8080/mg.pcap
+    wget --method=PUT --body-file=gwcapture.pcap http://10.10.10.1:8080/mg.pcap
+"""
 
 class FileUploadProtocol(asyncio.Protocol):
     def __init__(self, upload_dir, upload_queue):
@@ -196,14 +195,3 @@ async def start_http_server(host, port, upload_dir, upload_queue):
         logger.info("HTTP server closed")
 
 ############################## END AHTTP ######################################
-
-if __name__ == "__main__":
-    from async_loop import asyncio_run
-    from asyncio import Queue
-    
-    host = "0.0.0.0"
-    port = config.get("http_port", 8080)
-    upload_dir = config.get("upload_dir", "./")
-    queue = Queue()
-
-    #asyncio_run(start_http_server(host, port, upload_dir, queue))

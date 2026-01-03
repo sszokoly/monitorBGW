@@ -10,32 +10,68 @@ import re
 import time
 from asyncio import Queue, Semaphore
 from datetime import datetime
-from typing import Any, Callable, MutableMapping, Coroutine, Dict, List, Optional, Tuple, Set, Mapping
+from typing import Any, Callable, MutableMapping, Coroutine, Dict, List, Optional, Tuple, Set, Mapping, Iterable
 
 ############################## END IMPORTS ####################################
 
-from utils import connected_gws, create_bgw_script, CommandResult
-from config import config, logger
+from config import CONFIG
 from bgw import BGW
 from storage import MemoryStorage, AbstractRepository
 from rtpparser import parse_rtpstat
 from ahttp import start_http_server
 from rtpparser import RTPDetails
+from script import EXPECT_SCRIPT
+from storage import GWs, BGWs, PCAPs, RTPs
+import logging
+logger = logging.getLogger(__name__)
 
-############################## BEGIN VARIABLES ################################
+############################## BEGIN ALOOP ####################################
 
-GWs = {}
-BGWs = MemoryStorage(name="BGWs")
-PCAPs = MemoryStorage(name="PCAPs")
-RTPs = MemoryStorage(maxlen=36, name="RTPs")
 TASKs = set()
-
+BGWMap = Mapping[str, Any]
 Progress = Tuple[int, int, int]
 ProgressCallback = Callable[[Progress], None]
-BGWMap = Mapping[str, Any]
 
-############################## END VARIABLES ##################################
-############################## BEGIN CLASSES ##################################
+class CommandResult:
+    """A consistent container for command output."""
+
+    stdout: str
+    stderr: str
+    returncode: Optional[int]
+    error_type: Optional[str]
+    name: Optional[str]
+
+    def __init__(
+        self,
+        stdout: str,
+        stderr: str,
+        returncode: Optional[int],
+        error_type: Optional[str] = None,
+        name: Optional[str] = None,
+    ) -> None:
+        """
+        Initializes the CommandResult object.
+        """
+        self.stdout = stdout
+        self.stderr = stderr
+        self.returncode = returncode
+        self.error_type = error_type
+        self.name = name
+
+    def __repr__(self) -> str:
+        """
+        Provides a string representation for debugging and printing
+        """
+        fields = [
+            f"name={repr(self.name)}",
+            f"stdout={repr(self.stdout)}",
+            f"stderr={repr(self.stderr)}",
+            f"returncode={self.returncode}",
+        ]
+        if self.error_type is not None:
+            fields.append(f"error_type={repr(self.error_type)}")
+
+        return f"CommandResult({', '.join(fields)})"
 
 class Capture:
     """A consistent container for command output."""
@@ -145,8 +181,119 @@ class Capture:
 
         return f"Capture({', '.join(fields)})"
 
-############################## END CLASSES ####################################
-############################## BEGIN FUNCTIONS ################################
+def create_bgw_script(
+    bgw: "BGW",
+    script_template: str = EXPECT_SCRIPT,
+) -> str:
+    """
+    Generate an Expect script for querying a BGW.
+
+    The generated script depends on whether the BGW has been seen before:
+    - If this is the first discovery, discovery commands are used and RTP
+      statistics are disabled.
+    - If the BGW has been seen previously, query commands are used and RTP
+      statistics are enabled.
+    - Any queued commands are prepended to the command list.
+
+    Args:
+        bgw: The BGW instance to generate the script for.
+        script_template: The Expect script template to format.
+
+    Returns:
+        A fully formatted Expect script as a string.
+    """
+    debug: int = 1 if logger.getEffectiveLevel() == 10 else 0
+
+    if not bgw.last_seen:
+        # Initial discovery
+        rtp_stats: int = 0
+        commands: List[str] = CONFIG["discovery_commands"][:]
+        prev_last_session_id: str = ""
+        prev_active_session_ids: Iterable[str] = []
+
+    else:
+        # Regular polling
+        rtp_stats = 1
+        prev_last_session_id = bgw.last_session_id or ""
+        prev_active_session_ids = sorted(bgw.active_session_ids)
+        commands = CONFIG["query_commands"][:]
+
+        if not bgw.queue.empty():
+            queued_commands = bgw.queue.get_nowait()
+            if isinstance(queued_commands, str):
+                queued_commands = [queued_commands]
+
+            commands = list(queued_commands) + commands
+            logger.info(
+                "Queued commands: '%s' - %s",
+                queued_commands,
+                bgw.lan_ip,
+            )
+
+    template_args = {
+        "lan_ip": bgw.lan_ip,
+        "user": CONFIG["user"],
+        "passwd": CONFIG["passwd"],
+        "prev_last_session_id": f'"{prev_last_session_id}"',
+        "prev_active_session_ids": "{"
+        + " ".join(f'"{sid}"' for sid in prev_active_session_ids)
+        + "}",
+        "rtp_stats": rtp_stats,
+        "commands": "{"
+        + " ".join(f'"{cmd}"' for cmd in commands)
+        + "}",
+        "debug": debug,
+    }
+
+    logger.debug(
+        "Template variables %s - %s",
+        template_args,
+        bgw.lan_ip,
+    )
+
+    return script_template.format(**template_args)
+
+def connected_gws(
+    ip_filter: Optional[Set[str]] = None,
+    ip_input: Optional[List[str]] = None
+) -> Dict[str, str]:
+    """Return a dictionary of connected G4xx media-gateways
+
+    Args:
+        ip_filter: IP addresses of BGWs to return if/when found.
+        ip_input: Manually fed list of BGW addresses, netstat will not run.
+
+    Returns:
+        Dict: A dictionary of connected gateways.
+    """
+    result: Dict[str, str] = {}
+    ip_filter = set(ip_filter) if ip_filter else set()
+    ip_input = list(ip_input) if ip_input else []
+
+    if ip_input:
+        return {ip:"na" for ip in ip_input}
+
+    command = "netstat -tan | grep ESTABLISHED | grep -E ':(1039|2944|2945)'"
+    pattern = r"([0-9.]+):(1039|2944|2945)\s+([0-9.]+):([0-9]+)"
+    protocols = {"1039": "ptls", "2944": "tls", "2945": "unenc"}
+
+    connections = os.popen(command).read()
+
+    for m in re.finditer(pattern, connections):
+        ip, port = m.group(3, 2)
+
+        proto = protocols.get(port, "unknown")
+        logger.debug(f"Found GW using {proto} - {ip}")
+
+        if not ip_filter or ip in ip_filter:
+            result[ip] = proto
+            logger.info(f"Added GW to results - {ip}")
+
+    if not result:
+        # For testing purposes, return a dummy dictionary
+        return {"10.10.48.58": "ptls", "10.44.244.51": "tls"}
+
+    return {ip: result[ip] for ip in sorted(result)}
 
 async def _run_cmd(
     program: str,
@@ -482,7 +629,7 @@ async def process_upload_queue(
                 process_upload_item(item, storage=storage, callback=callback)
                 continue
 
-            upload_dir = config.get("upload_dir", "./")
+            upload_dir = CONFIG.get("upload_dir", "./")
             pcapfile = os.path.join(upload_dir, filename)
 
             gw_number = "NA"
@@ -758,12 +905,12 @@ def schedule_queries(
 
     bgw_map = bgws if bgws is not None else BGWs  # expects .items()
 
-    semaphore = Semaphore(int(config.get("max_polling", 20)))
-    timeout = int(config.get("timeout", 25))
-    polling_secs = int(config.get("polling_secs", 15))
+    semaphore = Semaphore(int(CONFIG.get("max_polling", 20)))
+    timeout = int(CONFIG.get("timeout", 25))
+    polling_secs = int(CONFIG.get("polling_secs", 15))
 
     # Storage is passed into process_queue
-    storage: AbstractRepository[str, RTPDetails] = config.get("storage", RTPs)
+    storage: AbstractRepository[str, RTPDetails] = CONFIG.get("storage", RTPs)
 
     if queue is not None:
         schedule_task(
@@ -800,7 +947,7 @@ def schedule_http_server(
     items from a queue.
 
     Behaviour:
-        - If no HTTP server host is configured, nothing is scheduled.
+        - If no HTTP server host is CONFIGured, nothing is scheduled.
         - An asyncio.Queue is created for uploaded items.
         - The HTTP server coroutine is scheduled on the given event loop.
         - A consumer coroutine (`process_upload_queue`) is scheduled to
@@ -812,7 +959,7 @@ def schedule_http_server(
     Returns:
         None
     """
-    http_server: Optional[str] = config.get("http_server")
+    http_server: Optional[str] = CONFIG.get("http_server")
 
     if not http_server:
         return
@@ -822,8 +969,8 @@ def schedule_http_server(
     schedule_task(
         start_http_server(
             host=http_server,
-            port=int(config.get("http_port", 8080)),
-            upload_dir=config.get("upload_dir", "./"),
+            port=int(CONFIG.get("http_port", 8080)),
+            upload_dir=CONFIG.get("upload_dir", "./"),
             upload_queue=upload_queue,
         ),
         name="http_server",
@@ -956,7 +1103,7 @@ def finalize_loop_if_idle(loop):
     loop.close()
     return True
 
-############################## END FUNCTIONS ##################################
+############################## END ALOOP ######################################
 
 from asyncio import coroutines
 from asyncio import events
