@@ -2,6 +2,15 @@
 # -*- encoding: utf-8 -*-
 
 """
+##############################################################################
+## Name: monitorBGW
+## This tool monitors Avaya G4xx Branch gateways.
+## Date: 2026-01-01
+## Author: sszokoly@protonmail.com
+## License: MIT
+## Version: 0.1
+##############################################################################
+
 This is an application to monitor Avaya Branch gateways.
 - It uses curses for the UI and asyncio for asynchronous operations.
 - Compatible with Python 3.6 only as this tool is expected to be run
@@ -12,10 +21,9 @@ This is an application to monitor Avaya Branch gateways.
   on port 8080 by default and expects communication to be allowed on
   the network from the gateways to the Active CM shared IP address.
 - User -h or --help to see all command line options.
+
 Examples:
     python3 monitorBGW -u root -p password
-
-version 0.1
 """
 
 ############################## BEGIN IMPORTS ##################################
