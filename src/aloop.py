@@ -271,11 +271,21 @@ def connected_gws(
     ip_input = list(ip_input) if ip_input else []
 
     if ip_input:
-        return {ip:"na" for ip in ip_input}
+        return {ip:"unknown" for ip in ip_input}
 
-    command = "netstat -tan | grep ESTABLISHED | grep -E ':(1039|2944|2945)'"
-    pattern = r"([0-9.]+):(1039|2944|2945)\s+([0-9.]+):([0-9]+)"
-    protocols = {"1039": "ptls", "2944": "tls", "2945": "unenc"}
+    ports = "1039|2944|2945|61440|61441|61442|61443|61444"
+    command = "netstat -tan | grep ESTABLISHED | grep -E '{}'".format(ports)
+    pattern = r"([0-9.]+):(1039|2944|2945|6144[0-4])\s+([0-9.]+):([0-9]+)"
+    protocols = {
+        "1039": "ptls",
+        "2944": "tls",
+        "2945": "unenc",
+        "61440": "h323",
+        "61441": "h323",
+        "61442": "h323",
+        "61443": "h323",
+        "61444": "h323",
+    }
 
     connections = os.popen(command).read()
 
