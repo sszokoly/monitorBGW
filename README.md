@@ -1,2 +1,34 @@
 # monitorBGW
-Monitors Avaya Branch Gateways
+
+RTP session statistics monitoring and packet capture collecting tool for Avaya G4xx Branch Gateways.
+
+## Intro
+
+Avaya G4xx Branch Gateways are multifunctional gateways that work in conjunction with Avaya Aura® Communication Manager and supports Avaya IP and digital phones, analog devices, provides VoIP DSP resources, an optional WAN router.
+
+## Business Problem
+
+Troubleshooting voice quality issues has always been challenging for several reasons. One way system administrators can investigate these problems is by reviewing the QoS statistics for RTP streams that a Branch Gateway can collect and store for a limited period of time. In mid to large enterprises with more than a few Branch Gateways, reviewing RTP statistics on each gateway individually can be very time-consuming. While SNMP could be used to collect this information, it is often not configured end-to-end and may even be blocked by firewalls. In contrast, SSH access to Branch Gateways from the Communication Manager almost always works.
+
+## Solution
+
+This tool aims to address the aforementioned challenges by:
+
+- Discovering all Branch Gateways connected to the Communication Manager
+- Collecting configuration, hardware, and operational status information from each discovered gateway
+- Collecting RTP session statistics from discovered gateways, sorted by timestamp
+- Displaying an RTP session summary that highlights problematic sessions more clearly than the default gateway output
+- Presenting detailed RTP session information in a format that is easier to understand than the standard CLI output
+- Allowing administrators to start and stop the gateway’s capture service (provided the service is enabled)
+- Allowing administrators to trigger the upload of gateway packet captures to an HTTP server
+- Optionally running a local HTTP server on port 8080 to receive packet trace uploads
+- Displaying RTP analysis summaries as provided by tshark when run on the Communication Manager
+
+## Demo
+
+![alt text](./monitorBGW.gif?raw=true "monitorBGW")
+
+
+## Disclaimer
+
+The author in no way provides any warranty, express or implied, towards the content of traceAMS which was not developed or endorsed by the vendor of Avaya Media Server. It is the user's responsibility to determine the value and quality of this tool which is intended for testing purposes and for use by person at their own discretion and risk.
