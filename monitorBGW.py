@@ -3,12 +3,13 @@
 
 """
 ##############################################################################
-## Name: monitorBGW
-## This tool monitors Avaya G4xx Branch gateways.
-## Date: 2026-01-01
+## Name: monitorBGW.py
+## Purpose: This tool monitors Avaya G4xx Branch gateways
+## Date: 2026-01-04
 ## Author: sszokoly@protonmail.com
 ## License: MIT
 ## Version: 0.1
+## Source: https://github.com/sszokoly/monitorBGW
 ##############################################################################
 
 This is an application to monitor Avaya Branch gateways.
