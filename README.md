@@ -68,7 +68,7 @@ optional arguments:
 
 ## Demo
 
-![alt text](./monitorBGW.gif?raw=true "monitorBGW")
+![alt text](./src/monitorBGW.gif?raw=true "monitorBGW")
 
 
 ## Disclaimer
