@@ -30,6 +30,42 @@ The tool makes use of standard ***Python 3.6*** libraries, the ***expect*** pack
 
 If you intend to run this tool outside of Communication Manager, your system must have the ***expect*** package installed, and optionally ***tshark***.
 
+To run it on Communication Manager:
+
+```
+python3 monitorBGW -u <user> -p <passwd>
+```
+
+When <user> and <passwd> are the SSH credentials to log into the gateways.
+
+### Options
+
+```
+Monitors Avaya Gateways
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -u USER               SSH user of the G4xx Gateway
+  -p PASSWD             SSH password of the G4xx Gateway
+  -n POLLING_SECS       Polling frequency, default 20s
+  -m MAX_POLLING        Max simultaneous polling sessions, default 20
+  -t TIMEOUT            Query timeout, default 20s
+  -f IP [IP ...]        Gateway IP filter when on CM, default empty
+  -i IP [IP ...]        Gateway IP filter when not on CM, default empty
+  -l STORAGE_MAXLEN     max number of RTP stats to store, default 999
+  --http-server HTTP_SERVER
+                        HTTP server IP, default 0.0.0.0
+  --http-port HTTP_PORT
+                        HTTP server port, default 8080
+  --upload_dir UPLOAD_DIR
+                        PCAP Upload directory, default /tmp
+  --no-http             Don't run HTTP server, default False
+  --nok-rtp-only        Store only NOK RTPs, default False
+  --loglevel LOGLEVEL   loglevel, default NOTSET (no logging)
+  --logfile LOGFILE     log file, default monitorBGW.log
+```
+
+
 ## Demo
 
 ![alt text](./monitorBGW.gif?raw=true "monitorBGW")
