@@ -36,7 +36,7 @@ To run it on Communication Manager:
 python3 monitorBGW -u <user> -p <passwd>
 ```
 
-When <user> and <passwd> are the SSH credentials to log into the gateways.
+When `user` and `passwd` are the SSH credentials to log into the gateways.
 
 ### Options
 
