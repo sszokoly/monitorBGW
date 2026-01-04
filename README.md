@@ -4,7 +4,7 @@ RTP session statistics monitoring and packet capture collecting tool for Avaya G
 
 ## Intro
 
-Avaya G4xx Branch Gateways are multifunctional gateways that work in conjunction with Avaya Aura® Communication Manager and supports Avaya IP and digital phones, analog devices, provides VoIP DSP resources, an optional WAN router.
+Avaya G4xx Branch Gateways are multifunctional gateways that work in conjunction with Avaya Aura® Communication Manager, support Avaya IP and digital phones, analog devices, provide VoIP DSP resources, and optionally WAN router functionalities.
 
 ## Business Problem
 
