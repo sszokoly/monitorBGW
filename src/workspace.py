@@ -156,6 +156,10 @@ class Display(ABC):
 
                 if self.maxy >= self.miny and self.maxx >= self.minx:
                     self.make_display()
+                    curses.panel.update_panels()
+                    curses.doupdate()
+                    if self.active_workspace is not None:
+                        self.active_workspace.menubar.draw()
                 else:
                     self.stdscr.erase()
                     self.stdscr.refresh()
@@ -1671,7 +1675,7 @@ class Workspace(object):
         """Draw box"""
         colorb = self.color_border | curses.A_DIM if dim else self.color_border
         try:
-
+            self.win.erase()
             self.win.attron(colorb)
             self.win.box()
             self.win.attroff(colorb)

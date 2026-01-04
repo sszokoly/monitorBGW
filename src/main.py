@@ -129,7 +129,6 @@ def discovery_start(ws):
     BGWs.clear()
 
     ip_filter = FILTER_GROUPs["bgw"]["groups"]["ip_filter"]
-    ip_input = FILTER_GROUPs["bgw"]["groups"]["ip_input"]
     loop = startup_async_loop()
     progress_queue = Queue(loop=loop)
     
@@ -156,8 +155,7 @@ def discovery_start(ws):
         discovery(
             loop=loop,  
             callback=progress_callback,
-            ip_filter=ip_filter,
-            ip_input=ip_input, 
+            ip_filter=ip_filter
         ),
         name="discovery",
         loop=loop,
@@ -824,12 +822,9 @@ if __name__ == "__main__":
     parser.add_argument('-t', dest='timeout',
                         default=CONFIG.get('timeout', 20),
                         help='Query timeout, default 20s')
-    parser.add_argument('-f', dest='ip_filter', metavar='IP', nargs='+',
+    parser.add_argument('-i', dest='ip_filter', metavar='IP', nargs='+',
                         default=CONFIG.get('ip_filter', []),
-                        help='Gateway IP filter when on CM, default empty')
-    parser.add_argument('-i', dest='ip_input', metavar='IP', nargs='+',
-                        default=CONFIG.get('ip_input', []),
-                        help='Gateway IP filter when not on CM, default empty')
+                        help='IP of gateways to discover, default empty')
     parser.add_argument('-l', dest='storage_maxlen',
                         default=CONFIG.get('storage_maxlen', 999),
                         help='max number of RTP stats to store, default 999')

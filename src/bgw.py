@@ -320,8 +320,9 @@ class BGW(object):
         if not self.show_system:
             return "NA"
 
-        m = re.search(r"Flash Memory\s+:\s+(.*)", self.show_system)
-        result = m.group(1) if m else ""
+        m = re.search(r"Flash Memory\s+: (\d+)\S+ ([MG])B", self.show_system)
+        size, unit = m.group(1) if m else "", m.group(2) if m else ""
+        result = "{}{}B".format(size, unit) if size and unit else ""
         self._comp_flash = result
         return result
 
@@ -1029,7 +1030,7 @@ class BGW(object):
         m = re.search(
             r".*?(?P<port>\d+/\d+)"
             r".*?(?P<name>.*)"
-            r".*?(?P<status>(connected|no link))"
+            r".*?(?P<status>(connected|no link|disabled))"
             r".*?(?P<vlan>\d+)"
             r".*?(?P<level>\d+)"
             r".*?(?P<neg>\S+)"

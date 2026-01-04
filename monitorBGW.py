@@ -686,9 +686,9 @@ LAYOUTS = {
         ("Status1", {
             "attr_name": "port1_status",
             "attr_func": None,
-            "attr_color": "connected",
+            "attr_color": "normal",
             "color_func": lambda x: (
-                "anormal" if "no link" in x else "attr_color"
+                "connected" if "connected" in x else "attr_color"
             ),
             "attr_fmt": ">9",
             "attr_xpos": 11,
@@ -730,9 +730,9 @@ LAYOUTS = {
         ("Status2", {
             "attr_name": "port2_status",
             "attr_func": None,
-            "attr_color": "connected",
+            "attr_color": "normal",
             "color_func": lambda x: (
-                "anormal" if "no link" in x else "attr_color"
+                "connected" if "connected" in x else "attr_color"
             ),
             "attr_fmt": ">9",
             "attr_xpos": 46,
@@ -797,9 +797,7 @@ LAYOUTS = {
             "attr_name": "capture_service",
             "attr_func": None,
             "attr_color": "normal",
-            "color_func": lambda x: (
-                "anormal" if "disabled" in x else "attr_color"
-            ),
+            "color_func": None,
             "attr_fmt": ">17",
             "attr_xpos": 14,
         }),
@@ -2280,8 +2278,7 @@ FILTER_GROUPs = {
         "current_filter": "",
         "no_filter": False,
         "groups": {
-            "ip_filter": set(),
-            "ip_input": set()
+            "ip_filter": set()
             }
         },
 }
@@ -2290,15 +2287,14 @@ FILTER_MENUs = {
     "bgw":
 """                                BGW FILTER
 Filter Usage:
-    -f <IP>    <IP> address filter of gateways separated by | or ,
-    -i <IP>    <IP> address input of gateways separated by | or ,
+    -i <IP>    <IP> address input of gateways separated by | or ,   
     -n         no filter, clear current filter
  
 Filter examples:
-  You may use -f when the script is run on a Communication Manager
-  You must use -i when the script is run outside a Communication Manager
+  You MAY  use -i when the script is run on a Communication Manager
+  You MUST use -i when the script is run outside a Communication Manager
   To discover only gateway 10.10.10.1 and 10.10.10.2
-    -f 10.10.10.1|10.10.10.2  OR  -f 10.10.10.1,10.10.10.2
+    -i 10.10.10.1|10.10.10.2  OR  -i 10.10.10.1,10.10.10.2
 """}
 
 class NoExitArgumentParser(argparse.ArgumentParser):
@@ -2365,8 +2361,7 @@ def create_filter_parser() -> "NoExitArgumentParser":
     mutually exclusive choice between:
 
     - `-n`: disable filtering
-    - `-f <ips>`: provide a set of BGW IPv4 addresses to discover (filter)
-    - `-i <ips>`: provide a set of BGW IPv4 addresses to discover (input)
+    - `-i <ips>`: provide a set of BGW IPv4 addresses to discover (filter)
 
     Returns:
         A configured NoExitArgumentParser instance.
@@ -2383,19 +2378,11 @@ def create_filter_parser() -> "NoExitArgumentParser":
     )
 
     group.add_argument(
-        "-f",
+        "-i",
         dest="ip_filter",
         type=parse_and_validate_i,
         default=set(),  # type: Set[str]
         help="BGW IP filter list separated by | or ,",
-    )
-
-    group.add_argument(
-        "-i",
-        dest="ip_input",
-        type=parse_and_validate_i,
-        default=set(),  # type: Set[str]
-        help="BGW IP input list separated by | or ,",
     )
 
     return parser
@@ -2432,81 +2419,38 @@ def filter_validator(line: str) -> Optional[str]:
         logger.error(repr(e))
         return str(e)
 
-from typing import Any, Dict, MutableMapping
-
-
 def update_filter(
     group: str,
     filter: str,
-    filter_groups: MutableMapping[str, Dict[str, Any]] = FILTER_GROUPs,
+    filter_groups: MutableMapping[str, Dict[str, Any]] = FILTER_GROUPs
 ) -> None:
-    """
-    Update the active filter configuration for a given filter group.
-
-    This function parses a filter string using the global `filter_parser` and
-    updates the corresponding entry in `filter_groups`. It supports:
-    - Clearing filters via the `--no-filter` flag
-    - Updating the current raw filter string
-    - Updating individual filter sub-groups (e.g. `ip_filter`, `ip_input`)
-
-    The structure of `filter_groups` is expected to be:
-
-        {
-            "<group>": {
-                "current_filter": str,
-                "no_filter": bool,
-                "groups": {
-                    "<filter_name>": Any,
-                },
-            }
-        }
-
-    Args:
-        group:
-            The top-level filter group key (e.g. "bgw").
-        filter:
-            The raw filter string entered by the user.
-        filter_groups:
-            A mutable mapping holding all filter group configurations.
-            Defaults to the global `FILTER_GROUPs`.
-
-    Returns:
-        None
-    """
-    # Parse arguments from the filter string
-    args = vars(filter_parser.parse_args(filter.split()))
-
+    """Update the active filter configuration for a given filter group."""
+    
     group_cfg = filter_groups.get(group)
-    if group_cfg is None:
+    if not group_cfg:
         return
 
-    # Handle "no filter" case
+    args = vars(filter_parser.parse_args(filter.split()))
+    groups = group_cfg.get("groups", {})
+    
+    # Clear all filters
     if args.get("no_filter"):
         group_cfg["current_filter"] = ""
-        group_cfg["no_filter"] = True
-        logger.info("Cleared 'current_filter'")
-
-    # Update current filter string
-    elif filter:
-        group_cfg["current_filter"] = filter
         group_cfg["no_filter"] = False
-        logger.info(f"Updated 'current_filter' to '{filter}'")
-
-    # Update individual filter groups (e.g. ip_filter)
-    groups = group_cfg.get("groups")
-    if not groups:
+        for g in groups.values():
+            g.clear()
+        logger.info("Cleared all filters")
         return
 
-    for key in groups:
-        if key not in args:
-            continue
-
-        if args.get("no_filter"):
-            groups[key].clear()
-        else:
-            groups[key] = args[key]
-
-        logger.info(f"Updated '{key}' to '{groups[key]}'")
+    # Update filters
+    if filter and filter != "-n":
+        group_cfg["current_filter"] = filter
+        group_cfg["no_filter"] = False
+        
+        for key, value in args.items():
+            if key in groups and value:
+                groups[key] = value
+                logger.info(f"Updated '{key}' to '{value}'")
 
 ############################## END FILTER #####################################
 ############################## BEGIN BGW ######################################
@@ -2818,8 +2762,9 @@ class BGW(object):
         if not self.show_system:
             return "NA"
 
-        m = re.search(r"Flash Memory\s+:\s+(.*)", self.show_system)
-        result = m.group(1) if m else ""
+        m = re.search(r"Flash Memory\s+: (\d+)\S+ ([MG])B", self.show_system)
+        size, unit = m.group(1) if m else "", m.group(2) if m else ""
+        result = "{}{}B".format(size, unit) if size and unit else ""
         self._comp_flash = result
         return result
 
@@ -3527,7 +3472,7 @@ class BGW(object):
         m = re.search(
             r".*?(?P<port>\d+/\d+)"
             r".*?(?P<name>.*)"
-            r".*?(?P<status>(connected|no link))"
+            r".*?(?P<status>(connected|no link|disabled))"
             r".*?(?P<vlan>\d+)"
             r".*?(?P<level>\d+)"
             r".*?(?P<neg>\S+)"
@@ -4268,24 +4213,18 @@ def create_bgw_script(
     return script_template.format(**template_args)
 
 def connected_gws(
-    ip_filter: Optional[Set[str]] = None,
-    ip_input: Optional[List[str]] = None
+    ip_filter: Optional[Set[str]] = None
 ) -> Dict[str, str]:
     """Return a dictionary of connected G4xx media-gateways
 
     Args:
-        ip_filter: IP addresses of BGWs to return if/when found.
-        ip_input: Manually fed list of BGW addresses, netstat will not run.
+        ip_filter: IP addresses of BGWs to discover.
 
     Returns:
         Dict: A dictionary of connected gateways.
     """
     result: Dict[str, str] = {}
     ip_filter = set(ip_filter) if ip_filter else set()
-    ip_input = list(ip_input) if ip_input else []
-
-    if ip_input:
-        return {ip:"unknown" for ip in ip_input}
 
     ports = "1039|2944|2945|61440|61441|61442|61443|61444"
     command = "netstat -tan | grep ESTABLISHED | grep -E '{}'".format(ports)
@@ -4313,7 +4252,8 @@ def connected_gws(
             result[ip] = proto
             logger.info(f"Added GW to results - {ip}")
 
-    return {ip: result[ip] for ip in sorted(result)}
+    result = {ip: result[ip] for ip in sorted(result)}
+    return result if result else {ip: "unknown" for ip in ip_filter}
 
 async def _run_cmd(
     program: str,
@@ -4851,7 +4791,6 @@ async def discovery(
     loop: "asyncio.AbstractEventLoop",
     callback: Optional[ProgressCallback] = None,
     ip_filter: Optional[Any] = None,
-    ip_input: Optional[Any] = None,
 ) -> None:
     """Discover connected gateways and process scheduled query results.
 
@@ -4859,12 +4798,11 @@ async def discovery(
         loop: Event loop used by `schedule_queries`.
         callback: Optional progress callback invoked as (ok, err, total).
         ip_filter: Optional filter passed to `connected_gws(ip_filter)`.
-        ip_input: Optional filter passed to `connected_gws(ip_input)`
     Returns:
         None
     """
     # connected_gws() should return mapping: lan_ip -> proto
-    gw_map: Dict[str, str] = connected_gws(ip_filter, ip_input)
+    gw_map: Dict[str, str] = connected_gws(ip_filter)
 
     bgws = {ip: BGW(ip, proto) for ip, proto in gw_map.items()}
     if not bgws:
@@ -5268,6 +5206,10 @@ class Display(ABC):
 
                 if self.maxy >= self.miny and self.maxx >= self.minx:
                     self.make_display()
+                    curses.panel.update_panels()
+                    curses.doupdate()
+                    if self.active_workspace is not None:
+                        self.active_workspace.menubar.draw()
                 else:
                     self.stdscr.erase()
                     self.stdscr.refresh()
@@ -6783,7 +6725,7 @@ class Workspace(object):
         """Draw box"""
         colorb = self.color_border | curses.A_DIM if dim else self.color_border
         try:
-
+            self.win.erase()
             self.win.attron(colorb)
             self.win.box()
             self.win.attroff(colorb)
@@ -7138,7 +7080,6 @@ def discovery_start(ws):
     BGWs.clear()
 
     ip_filter = FILTER_GROUPs["bgw"]["groups"]["ip_filter"]
-    ip_input = FILTER_GROUPs["bgw"]["groups"]["ip_input"]
     loop = startup_async_loop()
     progress_queue = Queue(loop=loop)
     
@@ -7165,8 +7106,7 @@ def discovery_start(ws):
         discovery(
             loop=loop,  
             callback=progress_callback,
-            ip_filter=ip_filter,
-            ip_input=ip_input, 
+            ip_filter=ip_filter
         ),
         name="discovery",
         loop=loop,
@@ -7833,12 +7773,9 @@ if __name__ == "__main__":
     parser.add_argument('-t', dest='timeout',
                         default=CONFIG.get('timeout', 20),
                         help='Query timeout, default 20s')
-    parser.add_argument('-f', dest='ip_filter', metavar='IP', nargs='+',
+    parser.add_argument('-i', dest='ip_filter', metavar='IP', nargs='+',
                         default=CONFIG.get('ip_filter', []),
-                        help='Gateway IP filter when on CM, default empty')
-    parser.add_argument('-i', dest='ip_input', metavar='IP', nargs='+',
-                        default=CONFIG.get('ip_input', []),
-                        help='Gateway IP filter when not on CM, default empty')
+                        help='IP of gateways to discover, default empty')
     parser.add_argument('-l', dest='storage_maxlen',
                         default=CONFIG.get('storage_maxlen', 999),
                         help='max number of RTP stats to store, default 999')

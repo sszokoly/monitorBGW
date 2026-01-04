@@ -385,9 +385,9 @@ LAYOUTS = {
         ("Status1", {
             "attr_name": "port1_status",
             "attr_func": None,
-            "attr_color": "connected",
+            "attr_color": "normal",
             "color_func": lambda x: (
-                "anormal" if "no link" in x else "attr_color"
+                "connected" if "connected" in x else "attr_color"
             ),
             "attr_fmt": ">9",
             "attr_xpos": 11,
@@ -429,9 +429,9 @@ LAYOUTS = {
         ("Status2", {
             "attr_name": "port2_status",
             "attr_func": None,
-            "attr_color": "connected",
+            "attr_color": "normal",
             "color_func": lambda x: (
-                "anormal" if "no link" in x else "attr_color"
+                "connected" if "connected" in x else "attr_color"
             ),
             "attr_fmt": ">9",
             "attr_xpos": 46,
@@ -496,9 +496,7 @@ LAYOUTS = {
             "attr_name": "capture_service",
             "attr_func": None,
             "attr_color": "normal",
-            "color_func": lambda x: (
-                "anormal" if "disabled" in x else "attr_color"
-            ),
+            "color_func": None,
             "attr_fmt": ">17",
             "attr_xpos": 14,
         }),

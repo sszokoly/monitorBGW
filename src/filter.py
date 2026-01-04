@@ -5,7 +5,7 @@
 
 import argparse
 import re
-from typing import Optional, Set
+from typing import Any, Optional, Set, Dict, MutableMapping
 
 ############################## END IMPORTS ####################################
 
@@ -19,8 +19,7 @@ FILTER_GROUPs = {
         "current_filter": "",
         "no_filter": False,
         "groups": {
-            "ip_filter": set(),
-            "ip_input": set()
+            "ip_filter": set()
             }
         },
 }
@@ -29,15 +28,14 @@ FILTER_MENUs = {
     "bgw":
 """                                BGW FILTER
 Filter Usage:
-    -f <IP>    <IP> address filter of gateways separated by | or ,
-    -i <IP>    <IP> address input of gateways separated by | or ,
+    -i <IP>    <IP> address input of gateways separated by | or ,   
     -n         no filter, clear current filter
  
 Filter examples:
-  You may use -f when the script is run on a Communication Manager
-  You must use -i when the script is run outside a Communication Manager
+  You MAY  use -i when the script is run on a Communication Manager
+  You MUST use -i when the script is run outside a Communication Manager
   To discover only gateway 10.10.10.1 and 10.10.10.2
-    -f 10.10.10.1|10.10.10.2  OR  -f 10.10.10.1,10.10.10.2
+    -i 10.10.10.1|10.10.10.2  OR  -i 10.10.10.1,10.10.10.2
 """}
 
 class NoExitArgumentParser(argparse.ArgumentParser):
@@ -104,8 +102,7 @@ def create_filter_parser() -> "NoExitArgumentParser":
     mutually exclusive choice between:
 
     - `-n`: disable filtering
-    - `-f <ips>`: provide a set of BGW IPv4 addresses to discover (filter)
-    - `-i <ips>`: provide a set of BGW IPv4 addresses to discover (input)
+    - `-i <ips>`: provide a set of BGW IPv4 addresses to discover (filter)
 
     Returns:
         A configured NoExitArgumentParser instance.
@@ -122,19 +119,11 @@ def create_filter_parser() -> "NoExitArgumentParser":
     )
 
     group.add_argument(
-        "-f",
+        "-i",
         dest="ip_filter",
         type=parse_and_validate_i,
         default=set(),  # type: Set[str]
         help="BGW IP filter list separated by | or ,",
-    )
-
-    group.add_argument(
-        "-i",
-        dest="ip_input",
-        type=parse_and_validate_i,
-        default=set(),  # type: Set[str]
-        help="BGW IP input list separated by | or ,",
     )
 
     return parser
@@ -171,81 +160,38 @@ def filter_validator(line: str) -> Optional[str]:
         logger.error(repr(e))
         return str(e)
 
-from typing import Any, Dict, MutableMapping
-
-
 def update_filter(
     group: str,
     filter: str,
-    filter_groups: MutableMapping[str, Dict[str, Any]] = FILTER_GROUPs,
+    filter_groups: MutableMapping[str, Dict[str, Any]] = FILTER_GROUPs
 ) -> None:
-    """
-    Update the active filter configuration for a given filter group.
-
-    This function parses a filter string using the global `filter_parser` and
-    updates the corresponding entry in `filter_groups`. It supports:
-    - Clearing filters via the `--no-filter` flag
-    - Updating the current raw filter string
-    - Updating individual filter sub-groups (e.g. `ip_filter`, `ip_input`)
-
-    The structure of `filter_groups` is expected to be:
-
-        {
-            "<group>": {
-                "current_filter": str,
-                "no_filter": bool,
-                "groups": {
-                    "<filter_name>": Any,
-                },
-            }
-        }
-
-    Args:
-        group:
-            The top-level filter group key (e.g. "bgw").
-        filter:
-            The raw filter string entered by the user.
-        filter_groups:
-            A mutable mapping holding all filter group configurations.
-            Defaults to the global `FILTER_GROUPs`.
-
-    Returns:
-        None
-    """
-    # Parse arguments from the filter string
-    args = vars(filter_parser.parse_args(filter.split()))
-
+    """Update the active filter configuration for a given filter group."""
+    
     group_cfg = filter_groups.get(group)
-    if group_cfg is None:
+    if not group_cfg:
         return
 
-    # Handle "no filter" case
+    args = vars(filter_parser.parse_args(filter.split()))
+    groups = group_cfg.get("groups", {})
+    
+    # Clear all filters
     if args.get("no_filter"):
         group_cfg["current_filter"] = ""
-        group_cfg["no_filter"] = True
-        logger.info("Cleared 'current_filter'")
-
-    # Update current filter string
-    elif filter:
-        group_cfg["current_filter"] = filter
         group_cfg["no_filter"] = False
-        logger.info(f"Updated 'current_filter' to '{filter}'")
-
-    # Update individual filter groups (e.g. ip_filter)
-    groups = group_cfg.get("groups")
-    if not groups:
+        for g in groups.values():
+            g.clear()
+        logger.info("Cleared all filters")
         return
 
-    for key in groups:
-        if key not in args:
-            continue
-
-        if args.get("no_filter"):
-            groups[key].clear()
-        else:
-            groups[key] = args[key]
-
-        logger.info(f"Updated '{key}' to '{groups[key]}'")
+    # Update filters
+    if filter and filter != "-n":
+        group_cfg["current_filter"] = filter
+        group_cfg["no_filter"] = False
+        
+        for key, value in args.items():
+            if key in groups and value:
+                groups[key] = value
+                logger.info(f"Updated '{key}' to '{value}'")
 
 ############################## END FILTER #####################################
 
@@ -261,6 +207,6 @@ def parse_and_validate_b(s):
     return result
 
 if __name__ == "__main__":
-    line = '-f 10.10.10.2'
+    line = '-i 10.10.10.2'
     err = filter_validator(line)
     print(err)

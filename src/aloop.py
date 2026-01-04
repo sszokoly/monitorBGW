@@ -254,24 +254,18 @@ def create_bgw_script(
     return script_template.format(**template_args)
 
 def connected_gws(
-    ip_filter: Optional[Set[str]] = None,
-    ip_input: Optional[List[str]] = None
+    ip_filter: Optional[Set[str]] = None
 ) -> Dict[str, str]:
     """Return a dictionary of connected G4xx media-gateways
 
     Args:
-        ip_filter: IP addresses of BGWs to return if/when found.
-        ip_input: Manually fed list of BGW addresses, netstat will not run.
+        ip_filter: IP addresses of BGWs to discover.
 
     Returns:
         Dict: A dictionary of connected gateways.
     """
     result: Dict[str, str] = {}
     ip_filter = set(ip_filter) if ip_filter else set()
-    ip_input = list(ip_input) if ip_input else []
-
-    if ip_input:
-        return {ip:"unknown" for ip in ip_input}
 
     ports = "1039|2944|2945|61440|61441|61442|61443|61444"
     command = "netstat -tan | grep ESTABLISHED | grep -E '{}'".format(ports)
@@ -299,7 +293,8 @@ def connected_gws(
             result[ip] = proto
             logger.info(f"Added GW to results - {ip}")
 
-    return {ip: result[ip] for ip in sorted(result)}
+    result = {ip: result[ip] for ip in sorted(result)}
+    return result if result else {ip: "unknown" for ip in ip_filter}
 
 async def _run_cmd(
     program: str,
@@ -837,7 +832,6 @@ async def discovery(
     loop: "asyncio.AbstractEventLoop",
     callback: Optional[ProgressCallback] = None,
     ip_filter: Optional[Any] = None,
-    ip_input: Optional[Any] = None,
 ) -> None:
     """Discover connected gateways and process scheduled query results.
 
@@ -845,12 +839,11 @@ async def discovery(
         loop: Event loop used by `schedule_queries`.
         callback: Optional progress callback invoked as (ok, err, total).
         ip_filter: Optional filter passed to `connected_gws(ip_filter)`.
-        ip_input: Optional filter passed to `connected_gws(ip_input)`
     Returns:
         None
     """
     # connected_gws() should return mapping: lan_ip -> proto
-    gw_map: Dict[str, str] = connected_gws(ip_filter, ip_input)
+    gw_map: Dict[str, str] = connected_gws(ip_filter)
 
     bgws = {ip: BGW(ip, proto) for ip, proto in gw_map.items()}
     if not bgws:
