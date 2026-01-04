@@ -38,11 +38,10 @@ python3 monitorBGW -u <user> -p <passwd>
 
 When `user` and `passwd` are the SSH credentials to log into the gateways.
 
+
 ### Options
 
 ```
-Monitors Avaya Gateways
-
 optional arguments:
   -h, --help            show this help message and exit
   -u USER               SSH user of the G4xx Gateway
@@ -50,8 +49,7 @@ optional arguments:
   -n POLLING_SECS       Polling frequency, default 20s
   -m MAX_POLLING        Max simultaneous polling sessions, default 20
   -t TIMEOUT            Query timeout, default 20s
-  -f IP [IP ...]        Gateway IP filter when on CM, default empty
-  -i IP [IP ...]        Gateway IP filter when not on CM, default empty
+  -i IP                 IP of gateways to discover, default empty
   -l STORAGE_MAXLEN     max number of RTP stats to store, default 999
   --http-server HTTP_SERVER
                         HTTP server IP, default 0.0.0.0

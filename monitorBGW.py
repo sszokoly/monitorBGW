@@ -7772,8 +7772,8 @@ if __name__ == "__main__":
     parser.add_argument('-t', dest='timeout',
                         default=CONFIG.get('timeout', 20),
                         help='Query timeout, default 20s')
-    parser.add_argument('-i', dest='ip_filter', metavar='IP', nargs='+',
-                        default=CONFIG.get('ip_filter', []),
+    parser.add_argument('-i', dest='ip_filter', metavar='IP',
+                        default="",
                         help='IP of gateways to discover, default empty')
     parser.add_argument('-l', dest='storage_maxlen',
                         default=CONFIG.get('storage_maxlen', 999),
@@ -7813,8 +7813,13 @@ if __name__ == "__main__":
     CONFIG.update(vars(args))
     RTPs.maxlen = int(args.storage_maxlen)
 
-    with terminal_context("xterm-256color"):
-        with application_context(CONFIG):
+    if args.ip_filter:
+        filter = f"-i {args.ip_filter}"
+        if filter_validator(filter) is None:
+            update_filter("bgw", filter)
+
+    with application_context(CONFIG):
+        with terminal_context("xterm-256color"):
             try:
                 curses.wrapper(main)
             except (KeyboardInterrupt, SystemExit):

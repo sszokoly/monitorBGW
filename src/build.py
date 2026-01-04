@@ -110,6 +110,7 @@ def build_compacted_bash_script(input_file="monitorBGW.py", output_file="monitor
         out_file.write("        exec(script_content)\n")
         out_file.write("    except Exception as e:\n")
         out_file.write("        print(f\"Unhandled exception executing script: {e}\")\n")
+        out_file.write("\n")
 
     os.chmod(output_file, 0o755)
 
