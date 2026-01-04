@@ -34,8 +34,8 @@ Filter Usage:
     -n         no filter, clear current filter
  
 Filter examples:
-  Use -f when the script is running on a Communication Manager
-  Use -i when the script is running outside a Communication Manager
+  You may use -f when the script is run on a Communication Manager
+  You must use -i when the script is run outside a Communication Manager
   To discover only gateway 10.10.10.1 and 10.10.10.2
     -f 10.10.10.1|10.10.10.2  OR  -f 10.10.10.1,10.10.10.2
 """}

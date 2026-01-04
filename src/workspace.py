@@ -292,7 +292,7 @@ class MyDisplay(Display):
         mem = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024)
         bgws = len(BGWs)
         rtps = len(RTPs)
-        return f"MemUsage:{mem:>4}MB | BGWs:{bgws:>4} | RTPs:{rtps:>4}"
+        return f"MemUsage: {mem}MB  |  BGWs: {bgws}  |  RTPs: {rtps}"
 
 class Tab(object):
     """Simple top tab bar widget for curses.
@@ -1646,6 +1646,7 @@ class Workspace(object):
     def draw(self, dim: bool=False) -> None:
         """Redraw frame, header, body, and menubar."""
         self.draw_bodywin(dim)
+        self.draw_box(dim)
         self.draw_headerwin(dim)
         self.menubar.draw()
 
@@ -1766,7 +1767,7 @@ class Workspace(object):
 
         if not self.panel.hidden():
             self.bodywin.noutrefresh()
-            self.draw_box(dim)
+            #self.draw_box(dim)
         self.menubar.draw()
 
     def cursor_handler(self, char: int) -> None:
@@ -1905,14 +1906,13 @@ class Workspace(object):
             curses.KEY_PPAGE,
         ):
             self.cursor_handler(char)
-            self.draw()
+            self.draw_bodywin()
             return
 
         if char in self.button_map:
             self.button_map[char].toggle(self)
             if self.panel == self.active_panel:
                 self.draw()
-            #self.menubar.draw()
 
 ############################## END WORKSPACE ##################################
 

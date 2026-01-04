@@ -4,8 +4,8 @@
 ############################## BEGIN CONFIG ###################################
 
 CONFIG = {
-    "user": "root",
-    "passwd": "cmb@Dm1n",
+    "user": "",
+    "passwd": "",
     "max_polling": 20,
     "timeout": 20,
     "polling_secs": 20,

@@ -1,6 +1,23 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 
+"""
+This is an application to monitor Avaya Branch gateways.
+- It uses curses for the UI and asyncio for asynchronous operations.
+- Compatible with Python 3.6 only as this tool is expected to be run
+  on the Active Avaya Communicarion Manager 10.x server.
+- If run outside of CM on a Linux server, Python 3.6, 'expect' package
+  and SSH access to the gateways is required.
+- For media gateway packet capture upload it runs a local HTTP server
+  on port 8080 by default and expects communication to be allowed on
+  the network from the gateways to the Active CM shared IP address.
+- User -h or --help to see all command line options.
+Examples:
+    python3 monitorBGW -u root -p password
+
+version 0.1
+"""
+
 ############################## BEGIN IMPORTS ##################################
 
 import os
@@ -43,8 +60,8 @@ logger = logging.getLogger(__name__)
 ############################## BEGIN CONFIG ###################################
 
 CONFIG = {
-    "user": "root",
-    "passwd": "cmb@Dm1n",
+    "user": "",
+    "passwd": "",
     "max_polling": 20,
     "timeout": 20,
     "polling_secs": 20,
@@ -2278,8 +2295,8 @@ Filter Usage:
     -n         no filter, clear current filter
  
 Filter examples:
-  Use -f when the script is running on a Communication Manager
-  Use -i when the script is running outside a Communication Manager
+  You may use -f when the script is run on a Communication Manager
+  You must use -i when the script is run outside a Communication Manager
   To discover only gateway 10.10.10.1 and 10.10.10.2
     -f 10.10.10.1|10.10.10.2  OR  -f 10.10.10.1,10.10.10.2
 """}
@@ -5377,7 +5394,7 @@ class MyDisplay(Display):
         mem = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024)
         bgws = len(BGWs)
         rtps = len(RTPs)
-        return f"MemUsage:{mem:>4}MB | BGWs:{bgws:>4} | RTPs:{rtps:>4}"
+        return f"MemUsage: {mem}MB  |  BGWs: {bgws}  |  RTPs: {rtps}"
 
 class Tab(object):
     """Simple top tab bar widget for curses.
@@ -6731,6 +6748,7 @@ class Workspace(object):
     def draw(self, dim: bool=False) -> None:
         """Redraw frame, header, body, and menubar."""
         self.draw_bodywin(dim)
+        self.draw_box(dim)
         self.draw_headerwin(dim)
         self.menubar.draw()
 
@@ -6851,7 +6869,7 @@ class Workspace(object):
 
         if not self.panel.hidden():
             self.bodywin.noutrefresh()
-            self.draw_box(dim)
+            #self.draw_box(dim)
         self.menubar.draw()
 
     def cursor_handler(self, char: int) -> None:
@@ -6990,14 +7008,13 @@ class Workspace(object):
             curses.KEY_PPAGE,
         ):
             self.cursor_handler(char)
-            self.draw()
+            self.draw_bodywin()
             return
 
         if char in self.button_map:
             self.button_map[char].toggle(self)
             if self.panel == self.active_panel:
                 self.draw()
-            #self.menubar.draw()
 
 ############################## END WORKSPACE ##################################
 ############################## BEGIN UTILS ####################################
@@ -7087,6 +7104,11 @@ def make_filterpanel(ws, group):
         callback = filter_callback,
         name = f"FilterPanel({group})"
     )
+
+    ws.draw(dim=True)    
+    ws.active_panel = panel
+    panel.panel.show()
+    panel.panel.top()
     panel.draw()
     is_canceled = panel.handle_char()
     return is_canceled
@@ -7143,15 +7165,16 @@ def discovery_start(ws):
     def discovery_done_callback(fut: asyncio.Future, ws: Any) -> None:
         if fut.cancelled() or ws.display.loop_shutdown_requested:
             return
+        ws.display.update_title(ws.display.title)
         curses.flushinp()
         curses.ungetch(ord("s"))
 
     task.add_done_callback(partial(discovery_done_callback, ws=ws))
 
-    ws.draw()
-    ws.panel.hide()
+    ws.draw(dim=True)
     ws.active_panel = panel
-    ws.active_panel.draw()
+    panel.panel.show()
+    panel.panel.top()
     curses.panel.update_panels()
     curses.doupdate()
 
@@ -7182,9 +7205,7 @@ def polling_start(ws):
         polling_workspace = any(x.name == "button_polling" for x in aws.buttons)
 
         if polling_workspace:
-            update = ws.display.title
-            ws.display.update_title(update) 
-            logger.debug(f"Updated title with {update}")
+            ws.display.update_title(ws.display.title)
 
             if aws.panel != aws.active_panel:
                 rtpdetails = aws.storage.select(aws.storage_cursor + aws.body_posy)
@@ -7699,19 +7720,19 @@ def main(stdscr, miny: int=24, minx: int=80):
 
 ############################## END MAIN ######################################
 
-def get_username() -> str:
+def get_user() -> str:
     """Prompt user for SSH username of gateways.
 
     Returns:
         str: The input string of SSH username.
     """
     while True:
-        username = input("Enter SSH user of media-gateways: ")
-        username = username.strip()
-        confirm = input(f"Is '{username}' correct (Y/N)?: ")
+        user = input("Enter SSH user of media-gateways: ")
+        user = user.strip()
+        confirm = input(f"Is '{user}' correct (Y/N)?: ")
         if confirm.lower().startswith("y"):
             break
-    return username
+    return user
 
 def get_passwd() -> str:
     """Prompt user for SSH password of gateways.
@@ -7725,7 +7746,7 @@ def get_passwd() -> str:
         confirm = input(f"Is '{passwd}' correct (Y/N)?: ")
         if confirm.lower().startswith("y"):
             break
-    return passwd.strip()
+    return passwd
 
 @contextmanager
 def terminal_context(term_type="xterm-256color"):
@@ -7836,7 +7857,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if not args.user:
-        args.username = get_username()
+        args.user = get_user()
     if not args.passwd:
         args.passwd = get_passwd()
 
