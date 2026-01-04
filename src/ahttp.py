@@ -174,9 +174,13 @@ async def start_http_server(host, port, upload_dir, upload_queue):
     except Exception as e:
         logger.error(f"{e} while creating {upload_dir}")
     
-    server = await loop.create_server(
-        lambda: FileUploadProtocol(upload_dir, upload_queue), host, port
-    )
+    try:
+        server = await loop.create_server(
+            lambda: FileUploadProtocol(upload_dir, upload_queue), host, port
+        )
+    except Exception as e:
+        logger.error(f"Failed to start HTTP server on {host}:{port}: {e}")
+        return
 
     logger.info(f"HTTP server started on http://{host}:{port}")
     logger.info(f"Upload directory: {os.path.abspath(upload_dir)}")

@@ -6,7 +6,6 @@
 from abc import ABC, abstractmethod
 from bisect import insort_left
 from collections.abc import MutableMapping, ItemsView
-from typing_extensions import Protocol
 
 from typing import (
     AbstractSet,
@@ -26,11 +25,7 @@ from typing import (
 ############################## END IMPORTS ####################################
 ############################## BEGIN STORAGE ##################################
 
-class SupportsLessThan(Protocol):
-    def __lt__(self, other: Any) -> bool:
-        ...
-
-K = TypeVar("K", bound=SupportsLessThan)
+K = TypeVar("K", bound=Any)
 V = TypeVar("V")
 
 class AbstractRepository(ABC, Generic[K, V]):

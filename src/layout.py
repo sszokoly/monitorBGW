@@ -696,11 +696,12 @@ LAYOUTS = {
         }),
         (" OK?", {
             "attr_name": "nok",
-            "attr_func": lambda x: (u" ❌" if x == "Zero"
-                                    else (u" ⚠️" if x == "QoS" else u" ✅")),
-            "attr_color": "normal",
-            "color_func": lambda x: "anormal" if x != "None" else "attr_color",
-            "attr_fmt": "<4",
+            "attr_func": lambda x: (u" ⛔ " if x == "Zero" else
+                            (u" ❗ " if x == "QoS" else u" ✅ ")),
+            "attr_color": "ok_qos",
+            "color_func": lambda x: ("anormal" if x == u" ⛔ " else
+                            ("nok_qos" if x == u" ❗ " else "attr_color")),
+            "attr_fmt": "^4",
             "attr_xpos": 75,
         }),
     ],
@@ -1759,6 +1760,8 @@ COLORS = {
     "codec": 0,
     "encrypted": 10752,
     "id": 13312,
+    "nok_qos": 53760,
+    "ok_qos": 12288,
 }
 
 ColumnDef = Tuple[str, Dict[str, Any]]

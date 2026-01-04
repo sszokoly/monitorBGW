@@ -20,6 +20,7 @@ FILTER_GROUPs = {
         "no_filter": False,
         "groups": {
             "ip_filter": set(),
+            "ip_input": set()
             }
         },
 }
@@ -28,12 +29,15 @@ FILTER_MENUs = {
     "bgw":
 """                                BGW FILTER
 Filter Usage:
-    -i <IP>    <IP> address of Branch Gateway(s) separated by | or ,
+    -f <IP>    <IP> address filter of gateways separated by | or ,
+    -i <IP>    <IP> address input of gateways separated by | or ,
     -n         no filter, clear current filter
  
 Filter examples:
+  Use -f when the script is running on a Communication Manager
+  Use -i when the script is running outside a Communication Manager
   To discover only gateway 10.10.10.1 and 10.10.10.2
-    -i 10.10.10.1|10.10.10.2  OR  -i 10.10.10.1,10.10.10.2
+    -f 10.10.10.1|10.10.10.2  OR  -f 10.10.10.1,10.10.10.2
 """}
 
 class NoExitArgumentParser(argparse.ArgumentParser):
@@ -100,10 +104,8 @@ def create_filter_parser() -> "NoExitArgumentParser":
     mutually exclusive choice between:
 
     - `-n`: disable filtering
-    - `-i <ips>`: provide a set of BGW IPv4 addresses to filter by
-
-    The `-i` option uses `parse_and_validate_i` to parse a comma/pipe-separated
-    list into a validated `set[str]`.
+    - `-f <ips>`: provide a set of BGW IPv4 addresses to discover (filter)
+    - `-i <ips>`: provide a set of BGW IPv4 addresses to discover (input)
 
     Returns:
         A configured NoExitArgumentParser instance.
@@ -120,11 +122,19 @@ def create_filter_parser() -> "NoExitArgumentParser":
     )
 
     group.add_argument(
-        "-i",
+        "-f",
         dest="ip_filter",
         type=parse_and_validate_i,
         default=set(),  # type: Set[str]
         help="BGW IP filter list separated by | or ,",
+    )
+
+    group.add_argument(
+        "-i",
+        dest="ip_input",
+        type=parse_and_validate_i,
+        default=set(),  # type: Set[str]
+        help="BGW IP input list separated by | or ,",
     )
 
     return parser
@@ -176,7 +186,7 @@ def update_filter(
     updates the corresponding entry in `filter_groups`. It supports:
     - Clearing filters via the `--no-filter` flag
     - Updating the current raw filter string
-    - Updating individual filter sub-groups (e.g. `ip_filter`)
+    - Updating individual filter sub-groups (e.g. `ip_filter`, `ip_input`)
 
     The structure of `filter_groups` is expected to be:
 
@@ -251,6 +261,6 @@ def parse_and_validate_b(s):
     return result
 
 if __name__ == "__main__":
-    line = '-i 10.10.10.2q'
+    line = '-f 10.10.10.2'
     err = filter_validator(line)
     print(err)

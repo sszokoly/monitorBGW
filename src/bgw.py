@@ -7,6 +7,8 @@ import re
 from typing import Optional, Any, Dict, Set
 from asyncio import Queue
 from datetime import datetime
+import logging
+logger = logging.getLogger(__name__)
 
 ############################## END IMPORTS ####################################
 ############################## BEGIN BGW ######################################
@@ -319,8 +321,9 @@ class BGW(object):
             return "NA"
 
         m = re.search(r"Flash Memory\s+:\s+(.*)", self.show_system)
-        self._comp_flash = m.group(1) if m else ""
-        return self._comp_flash
+        result = m.group(1) if m else ""
+        self._comp_flash = result
+        return result
 
     @property
     def cpu_util(self) -> str:
@@ -365,8 +368,9 @@ class BGW(object):
         if not self.show_system:
             return "NA"
         m = re.search(r"FW Vintage\s+:\s+(\S+)", self.show_system)
-        self._fw = m.group(1) if m else "?"
-        return self._fw
+        result = m.group(1) if m else ""
+        self._fw = result
+        return result
 
     @property
     def hw(self) -> str:
@@ -417,8 +421,9 @@ class BGW(object):
 
         # NOTE: your original regex had an extra space before \s+.
         m = re.search(r"System Location\s+:\s*(\S+)", self.show_system)
-        self._location = m.group(1) if m else ""
-        return self._location
+        result = m.group(1) if m else ""
+        self._location = result
+        return result
 
     @property
     def mac(self) -> str:
@@ -428,8 +433,9 @@ class BGW(object):
         if not self.show_system:
             return "NA"
         m = re.search(r"LAN MAC Address\s+:\s+(\S+)", self.show_system)
-        self._mac = m.group(1).replace(":", "") if m else "?"
-        return self._mac
+        result = m.group(1).replace(":", "") if m else ""
+        self._mac = result
+        return result
 
     @property
     def mainboard_hw(self) -> str:
@@ -458,8 +464,9 @@ class BGW(object):
 
         if self.model and self.model.lower().startswith("g430"):
             m = re.search(r"RAM Memory\s+:\s+(\S+)", self.show_system)
-            self._memory = m.group(1) if m else ""
-            return self._memory
+            result = m.group(1) if m else ""
+            self._memory = result
+            return result
 
         m = re.findall(r"Memory #\d+\s+:\s+(\S+)", self.show_system)
         self._memory = "{}MB".format(
@@ -619,8 +626,9 @@ class BGW(object):
         if not self.show_system:
             return "NA"
         m = re.search(r"Model\s+:\s+(\S+)", self.show_system)
-        self._model = m.group(1) if m else ""
-        return self._model
+        result = m.group(1) if m else ""
+        self._model = result
+        return result
 
     # ------------------- Ports -------------------
 
@@ -740,12 +748,14 @@ class BGW(object):
 
         if self.model and self.model.lower().startswith("g430"):
             m = re.search(r"Main PSU\s+:\s+(\S+)", self.show_system)
-            self._psu1 = m.group(1) if m else ""
-            return self._psu1
+            result = m.group(1) if m else ""
+            self._psu1 = result
+            return result
 
         m = re.search(r"PSU #1\s+:\s+\S+ (\S+)", self.show_system)
-        self._psu1 = m.group(1) if m and "W" in m.group(1) else ""
-        return self._psu1
+        result = m.group(1) if m and "W" in m.group(1) else ""
+        self._psu1 = result
+        return result
 
     @property
     def psu2(self) -> str:
@@ -755,8 +765,9 @@ class BGW(object):
         if not self.show_system:
             return "NA"
         m = re.search(r"PSU #2\s+:\s+\S+ (\S+)", self.show_system)
-        self._psu2 = m.group(1) if m and "W" in m.group(1) else ""
-        return self._psu2
+        result = m.group(1) if m and "W" in m.group(1) else ""
+        self._psu2 = result
+        return result
 
     @property
     def ram_util(self) -> str:
@@ -791,8 +802,9 @@ class BGW(object):
         if not self.show_system:
             return "NA"
         m = re.search(r"Serial No\s+:\s+(\S+)", self.show_system)
-        self._serial = m.group(1) if m else ""
-        return self._serial
+        result = m.group(1) if m else ""
+        self._serial = result
+        return result
 
     @property
     def slamon_service(self) -> str:
@@ -802,8 +814,9 @@ class BGW(object):
         if not self.show_sla_monitor:
             return "NA"
         m = re.search(r"SLA Monitor:\s+(\S+)", self.show_sla_monitor)
-        self._slamon_service = m.group(1).lower() if m else ""
-        return self._slamon_service
+        result = m.group(1).lower() if m else ""
+        self._slamon_service = result
+        return result
 
     @property
     def sla_server(self) -> str:
@@ -816,8 +829,9 @@ class BGW(object):
             r"Registered Server IP Address:\s+(\S+)",
             self.show_sla_monitor,
         )
-        self._sla_server = m.group(1) if m else ""
-        return self._sla_server
+        result = m.group(1) if m else ""
+        self._sla_server = result
+        return result
 
     @property
     def snmp(self) -> str:
@@ -897,7 +911,7 @@ class BGW(object):
 
         m = re.search(r"Uptime \(\S+\)\s+:\s+(\S+)", self.show_system)
         if m:
-            self._uptime = (
+            result = (
                 m.group(1)
                 .replace(",", "d")
                 .replace(":", "h", 1)
@@ -905,8 +919,9 @@ class BGW(object):
                 + "s"
             )
         else:
-            self._uptime = "?"
-        return self._uptime
+            result = ""
+        self._uptime = result
+        return result 
 
     @property
     def inuse_dsp(self) -> str:

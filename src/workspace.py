@@ -4,6 +4,8 @@
 ############################## BEGIN IMPORTS #################################
 
 import _curses, curses, curses.ascii, curses.panel, curses.textpad
+import resource
+import sys
 import time
 from abc import ABC, abstractmethod
 from asyncio import Queue
@@ -16,7 +18,8 @@ if TYPE_CHECKING:
     import asyncio
 
 ############################## END IMPORTS ####################################
-from storage import MemoryStorage
+
+from storage import MemoryStorage, BGWs, RTPs
 from bgw import BGW
 from aloop import tick_async_loop, finalize_loop_if_idle, Capture
 from rtpparser import parse_rtpstat
@@ -206,6 +209,20 @@ class Display(ABC):
         """Handle a keystroke from the main loop."""
         raise NotImplementedError
 
+    def update_title(self, title: str = None) -> None:
+        """Updates terminal window title using curses."""
+        if title is None:
+            return
+        try:
+            curses.putp(curses.tigetstr("tsl"))  # Enter title mode
+            sys.stderr.write(title)
+            curses.putp(curses.tigetstr("fsl"))  # Exit title mode
+            sys.stderr.flush()
+        except:
+            # Fallback to escape sequence
+            sys.stderr.write(f"\x1b]2;{title}\x07")
+            sys.stderr.flush()
+
 class MyDisplay(Display):
     """Concrete Display implementation.
 
@@ -268,6 +285,14 @@ class MyDisplay(Display):
         except Exception as e:
             logger.exception(f"{e} in active_handle_char")
             pass
+
+    @property
+    def title(self) -> str:
+        """Return current memory usage in MB."""
+        mem = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024)
+        bgws = len(BGWs)
+        rtps = len(RTPs)
+        return f"MemUsage:{mem:>4}MB | BGWs:{bgws:>4} | RTPs:{rtps:>4}"
 
 class Tab(object):
     """Simple top tab bar widget for curses.
@@ -381,7 +406,7 @@ class Tab(object):
         if self.win is None:
             return
 
-        top = u"╭" + (u"─" * self.tab_width) + u"╮"
+        top = u"┌" + (u"─" * self.tab_width) + u"┐"
         mid = u"│" + (u" " * self.tab_width) + u"│"
 
         if active:
@@ -1268,10 +1293,10 @@ class ProgressBar(object):
         self.win.erase()
         try:
             self.win.addstr(0, 0, text, self.color_background)
-            if filled_width > 0:
-                self.win.addstr(
-                    0, 0, text[:filled_width], self.color_forground
-                )
+        except curses.error:
+            pass
+        try:
+            self.win.addstr(0, 0, text[:filled_width], self.color_forground)
         except curses.error:
             pass
 

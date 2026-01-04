@@ -10,7 +10,7 @@ import re
 import time
 from asyncio import Queue, Semaphore
 from datetime import datetime
-from typing import Any, Callable, MutableMapping, Coroutine, Dict, List, Optional, Tuple, Set, Mapping, Iterable
+from typing import Any, Callable, MutableMapping, Coroutine, Dict, List, Optional, Tuple, Set, Mapping, Iterable, no_type_check_decorator
 
 ############################## END IMPORTS ####################################
 
@@ -289,10 +289,6 @@ def connected_gws(
             result[ip] = proto
             logger.info(f"Added GW to results - {ip}")
 
-    if not result:
-        # For testing purposes, return a dummy dictionary
-        return {"10.10.48.58": "ptls", "10.44.244.51": "tls"}
-
     return {ip: result[ip] for ip in sorted(result)}
 
 async def _run_cmd(
@@ -465,6 +461,7 @@ async def process_queue(
     queue: "asyncio.Queue[Any]",
     storage: "AbstractRepository[str, RTPDetails]",
     callback: Optional[Callable[[], None]] = None,
+    nok_rtp_only: bool = False
 ) -> None:
     """Continuously consume items from an asyncio queue and process them.
 
@@ -485,7 +482,12 @@ async def process_queue(
         item = await queue.get()
         try:
             logger.debug("Got item from process queue: %r", item)
-            process_item(item, storage=storage, callback=callback)
+            process_item(
+                item,
+                storage=storage,
+                callback=callback,
+                nok_rtp_only=nok_rtp_only
+            )
         finally:
             try:
                 queue.task_done()
@@ -497,7 +499,7 @@ def process_item(
     bgw: Optional["BGW"] = None,
     storage: "AbstractRepository[str, RTPDetails]" = RTPs,
     callback: Optional[Callable[[], None]] = None,
-    nok_rtp_only: bool = False,
+    nok_rtp_only: bool = False
 ) -> None:
     """Process a single queue item and update BGW + RTP session storage.
 
@@ -584,7 +586,7 @@ def process_item(
                 continue
 
             storage.put({global_id: rtpdetails})
-            logger.info("Added %s to storage - %s", session_id, lan_ip)
+            logger.info("Updated storage with %s - %s", session_id, lan_ip)
     else:
         logger.debug("rtp_sessions is not a dict (got %r)", type(rtp_sessions))
 
@@ -825,6 +827,7 @@ async def discovery(
     loop: "asyncio.AbstractEventLoop",
     callback: Optional[ProgressCallback] = None,
     ip_filter: Optional[Any] = None,
+    ip_input: Optional[Any] = None,
 ) -> None:
     """Discover connected gateways and process scheduled query results.
 
@@ -832,13 +835,12 @@ async def discovery(
         loop: Event loop used by `schedule_queries`.
         callback: Optional progress callback invoked as (ok, err, total).
         ip_filter: Optional filter passed to `connected_gws(ip_filter)`.
-            Type depends on your implementation (e.g. str, list, predicate).
-
+        ip_input: Optional filter passed to `connected_gws(ip_input)`
     Returns:
         None
     """
     # connected_gws() should return mapping: lan_ip -> proto
-    gw_map: Dict[str, str] = connected_gws(ip_filter)
+    gw_map: Dict[str, str] = connected_gws(ip_filter, ip_input)
 
     bgws = {ip: BGW(ip, proto) for ip, proto in gw_map.items()}
     if not bgws:
@@ -877,6 +879,7 @@ async def discovery(
                 err += 1
         else:
             err += 1
+            logger.error("Query failed: %r", result)
 
         if callback:
             callback((ok, err, total))
@@ -913,8 +916,14 @@ def schedule_queries(
     storage: AbstractRepository[str, RTPDetails] = CONFIG.get("storage", RTPs)
 
     if queue is not None:
+        nok_rtp_only = bool(CONFIG.get("nok_rtp_only", False))
         schedule_task(
-            process_queue(queue, storage=storage, callback=callback),
+            process_queue(
+                queue,
+                storage=storage,
+                callback=callback,
+                nok_rtp_only=nok_rtp_only
+            ),
             loop=loop,
         )
 
@@ -962,6 +971,7 @@ def schedule_http_server(
     http_server: Optional[str] = CONFIG.get("http_server")
 
     if not http_server:
+        logger.warning(f"HTTP server will not be started")
         return
 
     upload_queue: "asyncio.Queue" = asyncio.Queue(loop=loop)  # type: ignore

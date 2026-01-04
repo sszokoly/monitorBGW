@@ -13,8 +13,10 @@ import asyncio
 import base64
 import _curses, curses, curses.ascii, curses.panel, curses.textpad
 import json
+import locale
 import logging
 import re
+import resource
 import sys
 import termios
 import time
@@ -28,12 +30,14 @@ from collections.abc import MutableMapping, ItemsView
 from datetime import datetime
 from functools import partial
 from urllib.parse import unquote
-from typing_extensions import Protocol
 from typing import AbstractSet, Any, Callable, Coroutine, Dict, FrozenSet
 from typing import Generator, Generic, Iterable, Iterator, ItemsView
 from typing import List, Mapping, MutableMapping, Optional, Set, Sequence
 from typing import Tuple, TypeVar, Union
 from typing import TYPE_CHECKING
+
+LOG_FORMAT = "%(asctime)s - %(levelname)8s - %(message)s [%(funcName)s:%(lineno)s]"
+logger = logging.getLogger(__name__)
 
 ############################## END IMPORTS ###################################
 
@@ -47,13 +51,9 @@ from filter import *
 from utils import *
 from layout import LAYOUTS, Layout, RTP_LAYOUT, COLORS, iter_attrs
 
-############################## BEGIN VARIABLES ###############################
+############################## BEGIN MODULES ##################################
 
-LOG_FORMAT = "%(asctime)s - %(levelname)8s - %(message)s [%(funcName)s:%(lineno)s]"
-
-############################## END VARIABLES ##################################
-
-
+############################## END MODULES ####################################
 ############################## BEGIN UI FUNCTIONS #############################
 def hide_panel(ws):
     ws.active_panel.panel.hide()
@@ -72,7 +72,7 @@ def make_filterpanel(ws, group):
     if not group or FILTER_MENUs.get(group) is None:
         return
 
-    logger.info("Make filterpanel requested")
+    logger.debug("Make filterpanel requested")
     
     storage = FILTER_MENUs[group].splitlines()
     current = FILTER_GROUPs[ws.filter_group]["current_filter"]
@@ -107,6 +107,7 @@ def discovery_start(ws):
     BGWs.clear()
 
     ip_filter = FILTER_GROUPs["bgw"]["groups"]["ip_filter"]
+    ip_input = FILTER_GROUPs["bgw"]["groups"]["ip_input"]
     loop = startup_async_loop()
     progress_queue = Queue(loop=loop)
     
@@ -131,9 +132,10 @@ def discovery_start(ws):
 
     task = schedule_task(
         discovery(
-            loop=loop,
+            loop=loop,  
             callback=progress_callback,
-            ip_filter=ip_filter
+            ip_filter=ip_filter,
+            ip_input=ip_input, 
         ),
         name="discovery",
         loop=loop,
@@ -181,6 +183,10 @@ def polling_start(ws):
         polling_workspace = any(x.name == "button_polling" for x in aws.buttons)
 
         if polling_workspace:
+            update = ws.display.title
+            ws.display.update_title(update) 
+            logger.debug(f"Updated title with {update}")
+
             if aws.panel != aws.active_panel:
                 rtpdetails = aws.storage.select(aws.storage_cursor + aws.body_posy)
                 aws.active_panel.draw(rtpdetails)
@@ -239,7 +245,8 @@ def capture_toggle(ws):
     return 1
 
 def capture_upload(ws):
-    if not ws.display.loop:
+    if not ws.display.loop or not CONFIG.get("http_server"):
+        logger.info("HTTP server not configured, request ignored")
         return
 
     bgw = ws.storage.select(ws.storage_cursor + ws.body_posy)
@@ -247,9 +254,12 @@ def capture_upload(ws):
     if bgw.pcap_upload == "requested":
         return
 
-    http_server = CONFIG.get("http_server")
+    http_server = CONFIG.get("http_server", "0.0.0.0")
     http_port = CONFIG.get("http_port")
     upload_dir = CONFIG.get("upload_dir")
+    if http_server == "0.0.0.0":
+        http_server = get_local_ip()
+
     dest = f"{http_server}:{http_port}/{upload_dir}"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{timestamp}_{bgw.gw_number}.cap"
@@ -690,6 +700,34 @@ def main(stdscr, miny: int=24, minx: int=80):
 
 ############################## END MAIN ######################################
 
+def get_username() -> str:
+    """Prompt user for SSH username of gateways.
+
+    Returns:
+        str: The input string of SSH username.
+    """
+    while True:
+        username = input("Enter SSH user of media-gateways: ")
+        username = username.strip()
+        confirm = input(f"Is '{username}' correct (Y/N)?: ")
+        if confirm.lower().startswith("y"):
+            break
+    return username
+
+def get_passwd() -> str:
+    """Prompt user for SSH password of gateways.
+
+    Returns:
+        str: The input string of SSH password.
+    """
+    while True:
+        passwd = input("Enter SSH password of media-gateways: ")
+        passwd = passwd.strip()
+        confirm = input(f"Is '{passwd}' correct (Y/N)?: ")
+        if confirm.lower().startswith("y"):
+            break
+    return passwd.strip()
+
 @contextmanager
 def terminal_context(term_type="xterm-256color"):
     """
@@ -699,9 +737,18 @@ def terminal_context(term_type="xterm-256color"):
         term_type: The terminal type to change to
     """
     old_term = change_terminal(term_type)
+    old_locale = locale.setlocale(locale.LC_ALL, None)
+
     try:
+        locale.setlocale(locale.LC_ALL, "")
         yield
+
     finally:
+        try:
+            locale.setlocale(locale.LC_ALL, old_locale)
+        except locale.Error as e:
+            logger.error(f"Failed to restore locale {old_locale}: {e}")
+
         if term_type != old_term:
             os.environ["TERM"] = old_term
             logger.info(f"Changed terminal to '{old_term}'")
@@ -712,14 +759,19 @@ def application_context(CONFIG):
     Context manager to handle application startup and shutdown.
     
     Sets up logging, configures terminal, and ensures proper cleanup.
-    """   
+    """
     # Set up logging
-    logging.basicConfig(
-        format=LOG_FORMAT,
-        filename=CONFIG["logfile"],
-        level=CONFIG["loglevel"].upper()
-    )
-    
+    loglevel = CONFIG["loglevel"].upper()
+
+    if loglevel not in ("NOTSET", "DISABLED", "NONE"):
+        logging.basicConfig(
+            format=LOG_FORMAT,
+            filename=CONFIG["logfile"],
+            level=loglevel
+        )
+    else:
+        logging.disable(logging.CRITICAL)
+
     # Save terminal state for restoration
     fd = sys.stdin.fileno()
     orig_term = termios.tcgetattr(fd)
@@ -735,7 +787,75 @@ def application_context(CONFIG):
             pass
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Monitors Avaya Gateways')
+    parser.add_argument('-u', dest='user',
+                        default=CONFIG.get('user', ''),
+                        help='SSH user of the G4xx Gateway')
+    parser.add_argument('-p', dest='passwd',
+                        default=CONFIG.get('passwd', ''),
+                        help='SSH password of the G4xx Gateway')
+    parser.add_argument('-n', dest='polling_secs',
+                        default=CONFIG.get('polling_secs', 20),
+                        help='Polling frequency, default 20s')
+    parser.add_argument('-m', dest='max_polling',
+                        default=CONFIG.get('max_polling', 20),
+                        help='Max simultaneous polling sessions, default 20')
+    parser.add_argument('-t', dest='timeout',
+                        default=CONFIG.get('timeout', 20),
+                        help='Query timeout, default 20s')
+    parser.add_argument('-f', dest='ip_filter', metavar='IP', nargs='+',
+                        default=CONFIG.get('ip_filter', []),
+                        help='Gateway IP filter when on CM, default empty')
+    parser.add_argument('-i', dest='ip_input', metavar='IP', nargs='+',
+                        default=CONFIG.get('ip_input', []),
+                        help='Gateway IP filter when not on CM, default empty')
+    parser.add_argument('-l', dest='storage_maxlen',
+                        default=CONFIG.get('storage_maxlen', 999),
+                        help='max number of RTP stats to store, default 999')
+    parser.add_argument('--http-server', dest='http_server',
+                        default=CONFIG.get('http_server', ''),
+                        help='HTTP server IP, default 0.0.0.0')
+    parser.add_argument('--http-port', dest='http_port',
+                        default=CONFIG.get('http_port', 8080),
+                        help='HTTP server port, default 8080')
+    parser.add_argument('--upload_dir', dest='upload_dir',
+                        default=CONFIG.get('upload_dir', '/tmp'),
+                        help='PCAP Upload directory, default /tmp')
+    parser.add_argument('--no-http', dest='no_http', action='store_true',
+                        default=False,
+                        help='Don\'t run HTTP server, default False')
+    parser.add_argument('--nok-rtp-only', dest='nok_rtp_only',
+                        action='store_true',
+                        default=CONFIG.get('nok_rtp_only', False),
+                        help='Store only NOK RTPs, default False')
+    parser.add_argument('--loglevel', dest='loglevel',
+                        default=CONFIG.get('loglevel', 'NOTSET'),
+                        help='loglevel, default NOTSET (no logging)')
+    parser.add_argument('--logfile', dest='logfile',
+                        default=CONFIG.get('logfile', 'monitorBGW.log'),
+                        help='log file, default monitorBGW.log')
+    args = parser.parse_args()
 
-    with application_context(CONFIG):
-        with terminal_context("xterm-256color"):
-            curses.wrapper(main)
+    if not args.user:
+        args.username = get_username()
+    if not args.passwd:
+        args.passwd = get_passwd()
+
+    if args.no_http:
+        args.http_server = ""
+
+    CONFIG.update(vars(args))
+    RTPs.maxlen = int(args.storage_maxlen)
+
+    with terminal_context("xterm-256color"):
+        with application_context(CONFIG):
+            try:
+                curses.wrapper(main)
+            except (KeyboardInterrupt, SystemExit):
+                logger.info("Application terminated by user")
+            except Exception as e:
+                logger.exception("Unhandled exception:")
+                print(f"\nError: {e}", file=sys.stderr)
+                sys.exit(1)
+            else:
+                logger.info("Application exited normally")

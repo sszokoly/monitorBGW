@@ -4,7 +4,9 @@
 ############################## BEGIN IMPORTS ##################################
 
 import os
+import re
 import sys
+import socket
 import resource
 from typing import List
 
@@ -15,19 +17,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 ############################## BEGIN UTILS ####################################
-
-def memory_usage_resource():
-    """int: Returns the memory usage of this tool in MB."""
-    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.)
-
-def update_title():
-    """Updates terminal status line."""
-    l = []
-    l.append("MemUsage:{0:>4}MB".format(memory_usage_resource()))
-    l.append("Num of BGWs: {0:>3}".format(len(GWs)))
-    l.append("Num of RTP Sessions: {0:>4}".format(len(RTPs)))
-    sys.stdout.write("\x1b]2;%s\x07" % "      ".join(l).ljust(80))
-    sys.stdout.flush()
 
 def get_available_terminal_types() -> List[str]:
     """
@@ -55,15 +44,29 @@ def change_terminal(to_type="xterm-256color"):
     """
     old_term = os.environ.get("TERM", "")
     available_types = get_available_terminal_types()
-    
+
     if to_type != old_term:
         if to_type in available_types:
             os.environ["TERM"] = to_type
             logger.info(f"Changed terminal to '{to_type}'")
         else:
             logger.error(f"Terminal {to_type} is not available")
-    
+
     return old_term
+
+def get_local_ip() -> str:
+    """Returns local IP used for the communication with Branch Gateways."""
+    command = "netstat -tan | grep ESTABLISHED | grep -E ':(1039|2944|2945)'"
+    connections = os.popen(command).read()
+    pattern = r"([0-9.]+):1039|2944|2945"
+
+    local_ips = re.findall(pattern, connections)
+    if local_ips:
+        return local_ips[0]
+
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    return local_ip
 
 ############################## END UTILS ######################################
 
