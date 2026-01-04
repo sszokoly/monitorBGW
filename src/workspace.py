@@ -1675,7 +1675,6 @@ class Workspace(object):
         """Draw box"""
         colorb = self.color_border | curses.A_DIM if dim else self.color_border
         try:
-            self.win.erase()
             self.win.attron(colorb)
             self.win.box()
             self.win.attroff(colorb)
