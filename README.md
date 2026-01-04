@@ -26,7 +26,7 @@ This tool aims to address the aforementioned challenges by:
 
 ## How it works
 
-The tool makes use of standard ***Python 3.6*** libraries, the ***expect*** package, and ***tshark*** as available on Communication Manager 10.x.
+The tool makes use of the standard ***Python 3.6*** libraries, the ***expect*** package, and ***tshark*** as available on Communication Manager 10.x.
 
 If you intend to run this tool outside of Communication Manager, your system must have the ***expect*** package installed, and optionally ***tshark***.
 
