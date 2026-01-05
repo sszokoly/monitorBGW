@@ -3609,7 +3609,7 @@ class RTPDetails(object):
     makes it resilient to schema changes (new fields appearing in parsed data).
 
     Attributes:
-        bgw_number: Gateway number / identifier.
+        gw_number: Gateway number / identifier.
         global_id: Global RTP session identifier.
         session_id: Session identifier (often numeric, stored as string).
         qos: QoS status string (e.g. "ok", "bad").
@@ -3630,7 +3630,7 @@ class RTPDetails(object):
                 Arbitrary RTP fields. Known keys overwrite the defaults.
                 Unknown keys are accepted and stored as attributes.
         """
-        self.bgw_number = ""          # type: str
+        self.gw_number = ""           # type: str
         self.global_id = ""           # type: str
         self.session_id = ""          # type: str
         self.qos = "ok"               # type: str
