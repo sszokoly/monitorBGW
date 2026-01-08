@@ -97,7 +97,7 @@ def build_compacted_bash_script(input_file="monitorBGW.py", output_file="monitor
         out_file.write("## Purpose: This tool monitors Avaya G4xx Branch gateways\n")
         out_file.write("## Author: sszokoly@protonmail.com\n")
         out_file.write("## License: MIT\n")
-        out_file.write("## Version: 0.1\n")
+        out_file.write("## Version: 0.2\n")
         out_file.write("## Source: https://github.com/sszokoly/monitorBGW\n")
         out_file.write("##########################################################\n\n")
         out_file.write("import base64\n")

@@ -154,6 +154,7 @@ class BGW(object):
         self._temp = None  # type: Optional[str]
         self._uptime = None  # type: Optional[str]
         self._upload_status = None  # type: Optional[str]
+        self._has_filter_501 = None # type: Optional[bool]
 
         # Keep kwargs accepted for forward compatibility
         _ = kwargs
@@ -195,6 +196,15 @@ class BGW(object):
 
         self._capture_service = "{} ({:>5})".format(state, size)
         return self._capture_service
+
+    @property
+    def has_filter_501(self) -> bool:
+        """Capture filter list 501 in ``show_capture``."""
+        if not self.show_capture:
+            return False
+
+        has_filter_501 = "Capture list 501" in self.show_capture
+        return has_filter_501
 
     @property
     def capture_status(self) -> str:
@@ -1019,7 +1029,7 @@ class BGW(object):
         if not self.show_port:
             return {}
 
-        matches = re.findall(r"(.*Avaya Inc)", self.show_port)
+        matches = re.findall(r"(.*Avaya )", self.show_port)
         if not matches:
             return {}
 

@@ -5,14 +5,11 @@
 
 import os
 import re
-import sys
 import socket
-import resource
 from typing import List
 
 ############################## END IMPORTS ####################################
 
-from storage import GWs, RTPs
 import logging
 logger = logging.getLogger(__name__)
 
@@ -72,4 +69,4 @@ def get_local_ip() -> str:
 
 if __name__ == "__main__":
     from aloop import connected_gws
-    print(connected_gws(ip_input=["10.10.10.1", "10.10.10.2"]))
+    print(connected_gws(ip_filter=["10.10.10.1", "10.10.10.2"]))

@@ -216,82 +216,6 @@ proc get_new_session_ids {} {
     return $new_session_ids
 }
 
-proc capture_setup {output} {
-    global debug dbg
-    set setup_commands [list]
-
-    if {$debug} {
-        puts $dbg "DEBUG: Begin 'capture_setup' with output '$output'"
-        flush $dbg
-    }
-
-    if {[string first "Buffer mode is non-cyclic" $output] == -1} {
-        lappend setup_commands "capture buffer-mode non-cyclic"
-    }
-    if {[string first "from each frame: 4096" $output] == -1} {
-        lappend setup_commands "capture max-frame-size 4096"
-    }
-    if {[string first "Capture list 501" $output] == -1} {
-        lappend setup_commands \
-            "no ip capture-list 501" \
-            "ip capture-list 501" \
-            "name udp" \
-            "ip-rule 1" \
-            "ip-protocol udp" \
-            "composite-operation Capture" \
-            "exit" \
-            "ip-rule default" \
-            "composite-operation No-Capture" \
-            "exit" \
-            "exit" \
-            "capture filter-group 501"
-    }
-
-    if {[llength $setup_commands] == 0} {
-        if {$debug} { puts $dbg "DEBUG: Execute: <none>"; flush $dbg }
-        return 0
-    }
-
-    if {$debug} {
-        puts $dbg "DEBUG: Execute '$setup_commands'"
-        flush $dbg
-    }
-    return [exec_commands $setup_commands 1 0]
-}
-
-proc capture_start {} {
-    global commands debug dbg
-    
-    if {$debug} {
-        puts $dbg "DEBUG: Begin 'capture_start' with commands '$commands'"
-        flush $dbg
-    }
-
-    # Remove "capture start" and "show capture" from commands list
-    set commands [lsearch -all -inline -not -exact $commands "capture start"]
-    set commands [lsearch -all -inline -not -exact $commands "show capture"]
-
-    set output [exec_command "show capture"]
-
-    if {$output eq ""} {
-        return
-    }
-
-    set status [capture_setup $output]
-    if {$status != 0} {
-        return
-    }
-
-    lappend commands "clear capture-buffer"
-    lappend commands "capture start"
-    lappend commands "show capture"
-
-    if {$debug} {
-        puts $dbg "DEBUG: End 'capture_start' with commands '$commands'"
-        flush $dbg
-    }
-}
-
 proc merge_lists {list1 list2} {
     set combined [concat $list1 $list2]
     set result [lsort -unique $combined]
@@ -326,11 +250,6 @@ regexp {([^\s]+)-(\d+)[\(]} $expect_out(buffer) "" gw_name gw_number
 
 # Set last_seen
 set last_seen [exec date "+%Y-%m-%d,%H:%M:%S"]
-
-# Start capture if requested
-if {[lsearch -exact $commands "capture start"] != -1} {
-    capture_start
-}
 
 if {[lsearch -glob $commands "copy capture-file*"] != -1} {
     lappend commands "show upload status 10"

@@ -10,19 +10,20 @@ import re
 import time
 from asyncio import Queue, Semaphore
 from datetime import datetime
-from typing import Any, Callable, MutableMapping, Coroutine, Dict, List, Optional, Tuple, Set, Mapping, Iterable, no_type_check_decorator
+from typing import Any, Callable, MutableMapping, Coroutine, Dict, List, Optional, Tuple, Set, Mapping, Iterable
 
 ############################## END IMPORTS ####################################
 
 from config import CONFIG
 from bgw import BGW
-from storage import MemoryStorage, AbstractRepository
+from storage import AbstractRepository
 from rtpparser import parse_rtpstat
 from ahttp import start_http_server
 from rtpparser import RTPDetails
 from script import EXPECT_SCRIPT
 from storage import GWs, BGWs, PCAPs, RTPs
 import logging
+
 logger = logging.getLogger(__name__)
 
 ############################## BEGIN ALOOP ####################################
@@ -254,7 +255,7 @@ def create_bgw_script(
     return script_template.format(**template_args)
 
 def connected_gws(
-    ip_filter: Optional[Set[str]] = None
+    ip_filter: Optional[Iterable[str]] = None
 ) -> Dict[str, str]:
     """Return a dictionary of connected G4xx media-gateways
 

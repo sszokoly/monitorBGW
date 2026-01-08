@@ -5,10 +5,10 @@
 ##############################################################################
 ## Name: monitorBGW.py
 ## Purpose: This tool monitors Avaya G4xx Branch gateways
-## Date: 2026-01-04
+## Date: 2026-01-08
 ## Author: sszokoly@protonmail.com
 ## License: MIT
-## Version: 0.1
+## Version: 0.2
 ## Source: https://github.com/sszokoly/monitorBGW
 ##############################################################################
 
@@ -254,15 +254,17 @@ def capture_toggle(ws):
     bgw = ws.storage.select(ws.storage_cursor + ws.body_posy)
 
     if "running" in bgw.capture_status:
-        command = "capture stop"
+        commands = ["capture stop"]
         status = "stopping"
     elif "stopped" in bgw.capture_status:
-        command = "capture start"
+        commands = ["clear capture-buffer", "capture start"]
+        if not bgw.has_filter_501:
+            commands = CONFIG["capture_setup"] + commands[:]
         status = "starting"
     else:
         return
 
-    bgw.queue.put_nowait(command)
+    bgw.queue.put_nowait(commands)
     bgw.packet_capture = status
     logger.info(f"PCAP {status} requested")
 
@@ -378,14 +380,18 @@ def show_port(ws):
     return panel if panel else None
 
 def show_config(ws):
-    panel = make_textpanel(ws, "show_running_config")
+    panel = make_textpanel(ws,
+            "show_running_config",
+            "show_sla_monitor"
+        )
     return panel if panel else None
 
 def show_status(ws):
     panel = make_textpanel(ws,
         "show_rtp_stat_summary",
         "show_voip_dsp",
-        "show_utilization"
+        "show_utilization",
+        "show_capture"
     )
     return panel if panel else None
 
