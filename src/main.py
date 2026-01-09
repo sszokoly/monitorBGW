@@ -345,6 +345,7 @@ def make_textpanel(ws, *attr_names):
         if not hasattr(bgw, attr_name):
             continue
         attr = str(getattr(bgw, attr_name)).strip()
+        storage.extend(["", f"COMMAND: {attr_name}", ""])
         storage.extend([x.rstrip() for x in attr.splitlines()])
 
     if not storage:
