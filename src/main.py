@@ -5,10 +5,10 @@
 ##############################################################################
 ## Name: monitorBGW.py
 ## Purpose: This tool monitors Avaya G4xx Branch gateways
-## Date: 2026-01-08
+## Date: 2026-01-16
 ## Author: sszokoly@protonmail.com
 ## License: MIT
-## Version: 0.2
+## Version: 0.2.1
 ## Source: https://github.com/sszokoly/monitorBGW
 ##############################################################################
 
@@ -43,6 +43,7 @@ import locale
 import logging
 import re
 import resource
+import socket
 import sys
 import termios
 import time
